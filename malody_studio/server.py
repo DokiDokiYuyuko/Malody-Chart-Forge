@@ -254,7 +254,7 @@ def list_jobs():
                 for j in sorted(jobs.values(), key=lambda j: j['created'], reverse=True)[:20]]
 
 @app.get('/api/history')
-def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(6, ge=1, le=24),
+def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1, le=8),
                      q: str = Query('', max_length=200), engine: str = Query(''),
                      status: str = Query(''), difficulty: str = Query(''),
                      sort: str = Query('newest')):

@@ -19,9 +19,11 @@
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/readme-light.png" alt="星轨谱面工坊晴空轨道亮色主题" width="100%"></td>
-    <td width="50%"><strong>两种节奏，一套工坊。</strong><br><br>「晴空轨道」以冰蓝、薄荷和淡粉铺开界面；「薄荷夜航」使用亮黑与荧光绿。鼠标移动时，短暂的流星沿轨迹划过。主题和效果都能在页面右上方的「设置」中调整。<br><br><a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge">在 GitHub 查看项目 →</a></td>
+    <td width="50%"><strong>五种气氛，一套工坊。</strong><br><br>晴空、蜜桃、月雾、海盐与薄荷夜航五款主题，覆盖清透浅色与荧光暗色。鼠标移动时，流星沿轨迹短暂划过。页面右上方的「设置」可切换主题和效果。<br><br><a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge">在 GitHub 查看项目 →</a></td>
   </tr>
 </table>
+
+<p align="center"><img src="docs/screenshots/readme-themes.png" alt="设置面板中的五款主题配色" width="78%"></p>
 
 <a id="简体中文"></a>
 
@@ -37,7 +39,7 @@ Startrail 是为旧版 Malody 4K 与手机四指游玩设计的本地制谱工�
 - Easy、Medium、Hard、Expert、Master、Lunatic 六档；逐档调整目标平均 NPS、滚动一秒峰值、同刻按键数、同轨间隔和长条上限。
 - 手机四指规则检查、音符预览、音乐播放、统计报告，以及包含音轨和背景图的 `.mcz` 打包。
 - 可上传本地音乐；也可搜索 YouTube 公开音源并下载到本机后制谱。在线搜索需要网络；本地推理不上传音频。
-- 晴空与薄荷夜航两套主题、可关闭的鼠标流星，以及适配不同屏幕的工作台和曲包页面。
+- 晴空、蜜桃、月雾、海盐、薄荷夜航五套主题；可关闭的鼠标流星；适配不同屏幕的工作台和曲包页面。
 - 模型权重、音频、缓存、报告和曲包保存在项目目录。模型权重需单独下载，本仓库不分发权重或用户音乐。
 
 ## 系统要求
@@ -165,7 +167,7 @@ Invoke-WebRequest `
 
 选择本地音乐或公开在线音源，填写/确认曲名和音乐人，勾选要生成的难度，点击生成。完成后下载 `.mcz`；曲包默认位于 `outputs/<任务编号>/malody-4k.mcz`，同目录的 `report.json` 保存参数、统计和检查结果。
 
-网页使用「**星轨谱面工坊 · Startrail**」作为界面名称。点击顶部「我的曲包」右侧的「设置」，可切换「晴空轨道」亮色主题和「薄荷夜航」暗色主题，并开启或关闭鼠标流星拖尾。选择会保存在当前浏览器，刷新后仍生效；「恢复外观默认」只调整外观，不改变谱面生成参数。系统启用减少动态效果时，拖尾自动停用。
+网页使用「**星轨谱面工坊 · Startrail**」作为界面名称。点击顶部「我的曲包」右侧的「设置」，可切换晴空、蜜桃、月雾、海盐与薄荷夜航五款主题，并开启或关闭鼠标流星拖尾。曲包与歌曲封面按 16:9 显示，完整保留原图。设置会保存在当前浏览器；系统启用减少动态效果时，拖尾自动停用。
 
 ## 难度和模型设置
 
@@ -363,7 +365,7 @@ The launcher normally uses `http://127.0.0.1:8765`. If an older service still oc
 
 Upload an audio file or select an available public track, confirm its title and artist, choose one or more difficulties, and click **Generate 4K charts**. Download the resulting `.mcz` from the page. Output packages and a `report.json` are saved under `outputs/<job-id>/`.
 
-The web interface is named **Startrail (星轨谱面工坊)**. Open **Settings (设置)** beside the library tab to choose the light sky theme or the dark mint theme, and toggle mouse meteor trails. Preferences are saved in your current browser across reloads. Restoring appearance defaults does not change chart generation settings. Trails are disabled when your system requests reduced motion.
+The web interface is named **Startrail (星轨谱面工坊)**. Open **Settings (设置)** beside the library tab to choose among five palettes: sky, peach, moon mist, sea salt, and mint night. Song and package artwork keeps its full image in a 16:9 frame. Mouse meteor trails can be toggled independently; your choices are saved in the current browser, and trails respect reduced-motion settings.
 
 You can also generate charts from PowerShell. For example, to create Easy, Hard, and Lunatic charts with V32:
 

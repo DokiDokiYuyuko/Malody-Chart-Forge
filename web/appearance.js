@@ -1,8 +1,16 @@
 (function () {
   'use strict';
   const storageKey = 'startrail.appearance.v1';
+  const themeNames = new Set(['light','peach','moon','sea','dark']);
+  const meteorPalette = {
+    light:{mint:'#138c9c',pink:'#b94b95',glow:3,alpha:.55},
+    peach:{mint:'#bb6c77',pink:'#cf7858',glow:4,alpha:.58},
+    moon:{mint:'#7165bd',pink:'#ba669f',glow:4,alpha:.6},
+    sea:{mint:'#287f9a',pink:'#657ac0',glow:4,alpha:.58},
+    dark:{mint:'#76ffd0',pink:'#ffa1d2',glow:8,alpha:.85}
+  };
   function normalizeAppearance(value, reducedMotion = false) {
-    return {theme:value?.theme === 'dark' ? 'dark' : 'light', trail:typeof value?.trail === 'boolean' ? value.trail : !reducedMotion};
+    return {theme:themeNames.has(value?.theme) ? value.theme : 'light', trail:typeof value?.trail === 'boolean' ? value.trail : !reducedMotion};
   }
   // A bounded particle system: no timer or animation work remains after the last meteor fades.
   function createMeteorSystem(random = Math.random) {
@@ -48,12 +56,12 @@
   function animate(time) {
     meteors.step(previousTime ? time-previousTime : 16); previousTime = time;
     ctx.clearRect(0,0,innerWidth,innerHeight);
-    const dark = preferences.theme === 'dark';
+    const palette = meteorPalette[preferences.theme] || meteorPalette.light;
     for (const p of meteors.particles) {
-      const fade = 1-p.age/p.life, color = p.pink ? (dark?'#ffa1d2':'#b94b95') : (dark?'#76ffd0':'#138c9c');
+      const fade = 1-p.age/p.life, color = p.pink ? palette.pink : palette.mint;
       const magnitude = Math.hypot(p.vx,p.vy)||1;
-      ctx.globalAlpha = fade*(dark ? 0.85 : 0.55); ctx.strokeStyle = color; ctx.fillStyle = color;
-      ctx.shadowColor = color; ctx.shadowBlur = dark ? 8 : 3; ctx.lineWidth = 1.2;
+      ctx.globalAlpha = fade*palette.alpha; ctx.strokeStyle = color; ctx.fillStyle = color;
+      ctx.shadowColor = color; ctx.shadowBlur = palette.glow; ctx.lineWidth = 1.2;
       const tail = ctx.createLinearGradient(p.x,p.y,p.x-p.vx/magnitude*p.length,p.y-p.vy/magnitude*p.length);
       tail.addColorStop(0,color); tail.addColorStop(1,'transparent'); ctx.strokeStyle = tail;
       ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x-p.vx/magnitude*p.length,p.y-p.vy/magnitude*p.length); ctx.stroke();

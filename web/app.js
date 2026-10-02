@@ -396,7 +396,7 @@ async function loadStorage() {
 }
 async function history() {
   const number = ++historyRequest;
-  const params = new URLSearchParams({page:String(historyPage),page_size:'6',q:historyQuery,
+  const params = new URLSearchParams({page:String(historyPage),page_size:'8',q:historyQuery,
     engine:$('history-engine').value,status:$('history-status').value,
     difficulty:$('history-difficulty').value,sort:$('history-sort').value});
   try {
@@ -423,10 +423,10 @@ async function history() {
       const keys=item.difficulties || [], labels=item.difficulty_labels?.length ? item.difficulty_labels : keys;
       labels.forEach((label,index)=>{ const badge=document.createElement('span'); badge.className='difficulty-badge'; const key=keys[index] || ''; badge.dataset.key=key==='normal'?'medium':key; badge.textContent=difficultyLabel(label); levels.append(badge); });
       const actions=document.createElement('div'); actions.className='history-actions';
-      const open=document.createElement('button'); open.className='preview-action'; open.textContent=item.status==='completed'?'打开预览':'查看进度'; open.onclick=()=>watchJob(item.id); actions.append(open);
-      if (item.status==='completed' && item.download) { const download=document.createElement('a'); download.href=item.download; download.textContent='下载 MCZ'; download.className='history-download'; actions.append(download); }
-      if (['completed','failed'].includes(item.status)) { const rerun=document.createElement('button'); rerun.textContent=item.status==='completed'?'按原设置再生成':'按原设置重试'; rerun.onclick=async()=>{ rerun.disabled=true; try { const job=await request(`/api/jobs/${item.id}/regenerate`,{method:'POST'}); await watchJob(job.id); } catch(error) { showError('history-error',error.message); } finally { rerun.disabled=false; } }; actions.append(rerun); }
-      if (!['queued','running'].includes(item.status)) { const remove=document.createElement('button'); remove.textContent='删除'; remove.className='danger-button'; remove.onclick=async()=>{ if (!window.confirm(`删除“${item.title}”的曲包和报告，并清理本条记录独占的原始上传音乐？共享的在线下载音乐库不会受影响。此操作无法撤销。`)) return; remove.disabled=true; try { await request(`/api/jobs/${item.id}`,{method:'DELETE'}); await history(); await loadStorage(); } catch(error) { showError('history-error',error.message); remove.disabled=false; } }; actions.append(remove); }
+      const open=document.createElement('button'); open.className='preview-action'; open.textContent='预览'; open.title=item.status==='completed'?'打开预览':'查看进度'; open.setAttribute('aria-label',open.title); open.onclick=()=>watchJob(item.id); actions.append(open);
+      if (item.status==='completed' && item.download) { const download=document.createElement('a'); download.href=item.download; download.textContent='下载'; download.title='下载 MCZ 曲包'; download.className='history-download'; actions.append(download); }
+      if (['completed','failed'].includes(item.status)) { const rerun=document.createElement('button'); rerun.textContent=item.status==='completed'?'重生成':'重试'; rerun.title=item.status==='completed'?'按原设置重新生成':'按原设置重试'; rerun.setAttribute('aria-label',rerun.title); rerun.onclick=async()=>{ rerun.disabled=true; try { const job=await request(`/api/jobs/${item.id}/regenerate`,{method:'POST'}); await watchJob(job.id); } catch(error) { showError('history-error',error.message); } finally { rerun.disabled=false; } }; actions.append(rerun); }
+      if (!['queued','running'].includes(item.status)) { const remove=document.createElement('button'); remove.textContent='删除'; remove.title='删除曲包记录'; remove.className='danger-button'; remove.onclick=async()=>{ if (!window.confirm(`删除“${item.title}”的曲包和报告，并清理本条记录独占的原始上传音乐？共享的在线下载音乐库不会受影响。此操作无法撤销。`)) return; remove.disabled=true; try { await request(`/api/jobs/${item.id}`,{method:'DELETE'}); await history(); await loadStorage(); } catch(error) { showError('history-error',error.message); remove.disabled=false; } }; actions.append(remove); }
       const state=document.createElement('small'); state.textContent=statusLabels[item.status]; state.className='history-state';
       art.append(cover,engine,state); body.append(name,artist,levels,meta,actions); card.append(art,body); return card;
     }));
