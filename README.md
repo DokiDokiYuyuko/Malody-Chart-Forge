@@ -14,16 +14,18 @@
   <p><a href="#简体中文">简体中文</a>　·　<a href="#english">English</a>　·　<a href="#一键配置推荐">快速开始</a></p>
 </div>
 
-<p align="center"><img src="docs/screenshots/readme-night.png" alt="Startrail 薄荷夜航主题与鼠标流星效果" width="100%"></p>
+<p align="center"><img src="docs/screenshots/readme-night.jpg" alt="Startrail four-lane chart preview in the mint-night theme" width="100%"></p>
+<p align="center"><sub>薄荷夜航 · Mint night — four-lane preview and compact playback controls</sub></p>
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/readme-light.png" alt="星轨谱面工坊晴空轨道亮色主题" width="100%"></td>
-    <td width="50%"><strong>五种气氛，一套工坊。</strong><br><br>晴空、蜜桃、月雾、海盐与薄荷夜航五款主题，覆盖清透浅色与荧光暗色。鼠标移动时，流星沿轨迹短暂划过。页面右上方的「设置」可切换主题和效果。<br><br><a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge">在 GitHub 查看项目 →</a></td>
+    <td width="50%" valign="top"><img src="docs/screenshots/readme-light.jpg" alt="Startrail chart-generation workbench with six difficulty tiers" width="100%"><br><sub><strong>制谱工作台 / Chart workbench</strong> — 六档难度、谱面预览与统计。Six difficulty tiers, chart preview, and measured statistics.</sub></td>
+    <td width="50%" valign="top"><img src="docs/screenshots/readme-library.jpg" alt="My charts library in a four-column by two-row paginated layout" width="100%"><br><sub><strong>我的曲包 / My charts</strong> — 桌面端 4×2 曲包卡片与分页。A 4×2 desktop grid with pagination.</sub></td>
   </tr>
 </table>
 
-<p align="center"><img src="docs/screenshots/readme-themes.png" alt="设置面板中的五款主题配色" width="78%"></p>
+<p align="center"><img src="docs/screenshots/readme-themes.jpg" alt="Startrail appearance settings with five color themes" width="78%"></p>
+<p align="center"><sub>五款配色：晴空、蜜桃、月雾、海盐与薄荷夜航 · Five palettes: Sky, Peach, Moon Mist, Sea Salt, and Mint Night</sub></p>
 
 <a id="简体中文"></a>
 
@@ -42,12 +44,35 @@ Startrail 是为旧版 Malody 4K 与手机四指游玩设计的本地制谱工�
 - 晴空、蜜桃、月雾、海盐、薄荷夜航五套主题；可关闭的鼠标流星；适配不同屏幕的工作台和曲包页面。
 - 模型权重、音频、缓存、报告和曲包保存在项目目录。模型权重需单独下载，本仓库不分发权重或用户音乐。
 
-## 系统要求
+## 配置要求与实测表现
 
-- Windows 10/11 x64；启动脚本为 PowerShell 和 `.bat`。
-- Python 3.12 x64、Git，以及可用的 NVIDIA GPU/驱动。V32 使用 CUDA；MuG 有 CPU 回退，但速度未经验证。
-- 本项目在 NVIDIA RTX 4080 SUPER 16 GB 上完成过生成测试。其他显卡和显存配置未经完整验证；首次安装需要数 GB 磁盘空间和稳定网络。
-- 安装 PyTorch wheel 时无需单独安装完整 CUDA Toolkit；需要与 wheel 兼容的 NVIDIA 驱动。PyTorch 官方索引地址在锁文件中指定。
+下面把本机实测、实用建议和安装占用分开列出，避免把推荐配置误当成硬性最低配置。
+
+**平台：** 启动脚本面向 Windows 10/11 x64。**实测主机：** Windows 11 x64、Intel Core i5-12600KF、32 GB RAM、NVIDIA GeForce RTX 4080 SUPER（16 GB VRAM）、NVIDIA 驱动 591.86、Python 3.12 x64。主环境为 PyTorch 2.5.1 + CUDA 12.4；V32 独立环境为 PyTorch 2.10.0 + CUDA 13.0。两个环境均实测 `torch.cuda.is_available() = True` 并成功生成。
+
+| 引擎 | 本机完整曲目记录 | PyTorch 峰值显存 |
+| --- | --- | --- |
+| Mapperatorinator V32 | 7 次；曲长 3:23–7:27；端到端 73.5–195.4 秒，其中模型阶段 52.3–135.1 秒 | 1.22–1.60 GiB 已分配显存 |
+| MuG Diffusion | 2 次；曲长 4:03、4:18；端到端 42.3、42.7 秒 | 当前报告未记录 |
+
+V32 的显存数字来自 PyTorch allocator 统计，不等于整张显卡的总占用；速度会随歌曲、难度档数和后台负载变化。它们是本项目在上述主机上的完整曲生成记录，不是最低显存门槛或速度保证。
+
+**实用建议：** V32 需要 NVIDIA CUDA GPU。日常使用建议 8 GB 显存、16 GB 系统内存；16 GB 显存是本项目已完整验证的配置。MuG 支持 CPU 回退，但本机没有验证 CPU 生成速度。MuG 上游报告过在 4 GB RTX 3050 Ti 上生成 3 分钟歌曲的结果，这只能作为 MuG 上游参考，不代表本项目在该显卡上完成过验证。
+
+V32 锁定 CUDA 13.0 wheel，Windows 建议安装 NVIDIA R580 系列或更新驱动；本机实测驱动为 591.86。主环境还包含 CUDA 12.4 wheel。锁定的 PyTorch wheel 已包含运行时，正常使用不需要另装完整 CUDA Toolkit；只有自行编译 CUDA 扩展或从源码构建时才需要开发工具链。参考 [NVIDIA CUDA 兼容性说明](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html) 和 [PyTorch 安装指南](https://pytorch.org/get-started/locally/)。
+
+**磁盘空间按当前安装目录实测（GiB）：**
+
+| 目录 | 占用 |
+| --- | ---: |
+| 主环境 `.venv` | 4.98 |
+| 上游源码 `vendor/` | 1.73 |
+| MuG 权重 | 1.71 |
+| V32 独立环境 | 3.38 |
+| V32 权重 | 1.62 |
+| 两个引擎全部安装合计 | 13.42 |
+
+仅装 MuG 时，上述目录合计约 8.42 GiB；仅装 V32 约 11.71 GiB。若安装两个引擎，建议项目所在磁盘至少预留 20 GiB，以覆盖下载临时文件和安装缓存；表中没有计算用户音乐、输出曲包和后续缓存。首次配置还需要稳定网络下载依赖、源码和所选权重。
 
 ## 安装
 
@@ -222,17 +247,24 @@ node --check web\app.js
 
 当前测试覆盖参数校验、六档校准、音频处理、Mapperatorinator 转换、曲包结构和本地音乐库。手机端真实导入与手感不属于自动化测试范围。
 
-## 模型、代码和音乐的使用条款
+## 参考、许可与免责声明
 
-- **MuG 权重与其生成谱面：** 上游说明为非商业使用。项目不打包或托管该 checkpoint；下载者需自行阅读并遵守模型来源页及上游仓库的条款。
-- **Mapperatorinator：** 上游代码与模型卡标注 MIT；仍请查看对应固定版本中的许可证和模型卡。
-- **用户音乐与封面：** 用户需自行确认拥有下载、处理和使用权。生成谱面不会改变原音乐的权利归属。
-- **AI 标注：** 输出 MC、曲包说明和报告标记生成引擎及 AI 来源；分享时请保留相关信息。
-- Malody、osu!、MuG Diffusion、Mapperatorinator 和 yt-dlp 名称/商标归各自权利人。本项目不代表或获得其官方背书。
+模型配置和单独下载的权重保存在 `models/`；音乐、曲包、日志、运行环境及缓存保存在项目目录，并由 `.gitignore` 排除。请勿将音乐、`.mcz`、模型权重或虚拟环境提交到 Git。
+
+Startrail 是社区独立项目，与 Malody、模型作者、音乐发行方均无隶属或官方背书关系。项目面向个人、非商业的制谱练习与研究。当前仓库根目录没有统一的 `LICENSE`；Mapperatorinator 的 MIT 许可只适用于其上游对应部分，不自动覆盖整个 Startrail 仓库。各上游代码、模型权重和生成结果遵循各自条款；本说明不会额外授予音乐、插画或既有谱面的使用权。
+
+- **MuG Diffusion：** [上游代码与使用说明](https://github.com/Keytoyze/Mug-Diffusion)；[模型权重页](https://huggingface.co/ayousanz/Mug-Diffusion-model)。上游明确声明模型权重及其生成谱面仅限非商业使用。分享 MuG 生成谱面时请保留 AI 标记。
+- **Mapperatorinator V32：** [上游项目与许可证](https://github.com/OliBomby/Mapperatorinator/blob/main/LICENSE)；[本项目锁定的 V32 权重版本](https://huggingface.co/OliBomby/Mapperatorinator-v32/tree/74f22583400d259bf424819e11027c17933efe54)。上游代码和模型卡标注 MIT；这不覆盖输入音乐、封面图片或训练素材的权利。
+- **Malody：** [官方 Malody 应用说明](https://apps.apple.com/us/app/malody/id989630809)（列出 MC 格式支持）与[官方导入指南](http://m.mugzone.net/wiki/175)；另见[项目采用的 MC/MCZ 格式实现依据](docs/model-selection.md)。导出的曲包通过本项目结构检查，不等于已在每种 Malody 版本或手机上实机验证。
+- **音乐与封面：** 仅导入、下载和分享你有权使用的音频及图片；本地生成不会改变原作品的版权归属。在线搜索/下载不会绕过登录、付费限制或 DRM。
+- **难度与 AI：** NPS 和档位名称是生成目标及实测统计，不是 Malody 官方定级，也不保证适合所有玩家。试玩后再分享，并保留生成引擎及 AI 来源信息。
+
+本项目不对生成结果的准确性、可玩性或第三方平台兼容性作保证。发布、分享或商业使用前，请自行核对相关作品和组件的许可。
 
 ## 进一步阅读
 
 - [模型选择与格式依据](docs/model-selection.md)
+- [Malody 官方 MC 格式与导入指南](https://apps.apple.com/us/app/malody/id989630809)
 - [其他模型调研](docs/alternative-models-2026-10-02.md)
 - [V32 部署和限制](docs/v32-deployment.md)
 - [六档参数和验证记录](docs/studio-v2.md)
@@ -255,14 +287,38 @@ node --check web\app.js
 - Create Easy, Medium, Hard, Expert, Master, and Lunatic charts with configurable density and playability limits.
 - Preview four lanes, listen to the music, inspect chart statistics, and export an `.mcz` package with its audio and background image.
 - Upload local music. Optional YouTube search and download is available for publicly accessible tracks.
-- Switch between a sky-toned light theme and a glossy mint-night theme, with optional mouse meteor trails.
+- Choose among five palettes (Sky, Peach, Moon Mist, Sea Salt, and Mint Night), with optional mouse meteor trails and a responsive, paginated chart library.
 - Inference runs locally. Model weights, music, generated packages, and caches stay in the project folders; model weights are downloaded separately.
 
-### Requirements
+### Hardware and measured performance
 
-- Windows 10/11 x64, Python 3.12 x64, Git, and a compatible NVIDIA GPU/driver for V32.
-- PyTorch 2.5.1 with CUDA 12.4 is pinned in the main lock file. A separate environment is used for V32. A full CUDA Toolkit installation is not required for the pinned PyTorch wheel.
-- The project has been tested on an NVIDIA RTX 4080 SUPER with 16 GB VRAM. Other hardware has not been fully validated. Allow several gigabytes of free disk space and a reliable connection for first-time setup.
+The figures below distinguish a tested reference machine from practical recommendations. They are not claims about a minimum GPU.
+
+**Platform:** the launch scripts target Windows 10/11 x64. **Tested reference:** Windows 11 x64, Intel Core i5-12600KF, 32 GB RAM, NVIDIA GeForce RTX 4080 SUPER (16 GB VRAM), NVIDIA driver 591.86, and Python 3.12 x64. The main environment uses PyTorch 2.5.1 + CUDA 12.4; V32 has a separate PyTorch 2.10.0 + CUDA 13.0 environment. CUDA was available in both environments and both engines completed generation.
+
+| Engine | Full-song runs on this machine | PyTorch peak memory |
+| --- | --- | --- |
+| Mapperatorinator V32 | 7 runs; tracks 3:23–7:27; 73.5–195.4 seconds end to end, including 52.3–135.1 seconds in the model stage | 1.22–1.60 GiB allocated |
+| MuG Diffusion | 2 runs; tracks 4:03 and 4:18; 42.3 and 42.7 seconds end to end | Not recorded in the reports |
+
+V32 figures are PyTorch allocator measurements, not total GPU memory usage. Runtime varies with the song, selected tiers, and background load. These are completed runs on the listed machine, not a minimum VRAM threshold or a speed guarantee.
+
+**Practical target:** V32 requires an NVIDIA CUDA GPU. For comfortable use, target 8 GB VRAM and 16 GB system RAM; 16 GB VRAM is the configuration this project has fully validated. MuG can fall back to CPU, but CPU generation speed has not been measured here. The MuG upstream reports generating four charts from a three-minute track on an RTX 3050 Ti with 4 GB VRAM; that is an upstream reference, not a Startrail test on that card.
+
+The pinned V32 wheel uses CUDA 13.0. On Windows, use an NVIDIA R580-series or newer driver; this machine was tested on 591.86. The main environment also uses a CUDA 12.4 wheel. The pinned PyTorch wheels include their runtime, so a separate full CUDA Toolkit is unnecessary for normal use. A development toolkit is only needed when compiling CUDA extensions or building from source. See [NVIDIA’s CUDA compatibility guide](https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html) and [PyTorch’s install selector](https://pytorch.org/get-started/locally/).
+
+**Measured installed folders (GiB):**
+
+| Folder | Size |
+| --- | ---: |
+| Main environment, `.venv` | 4.98 |
+| Upstream source, `vendor/` | 1.73 |
+| MuG weights | 1.71 |
+| V32 environment | 3.38 |
+| V32 weights | 1.62 |
+| Both engines installed | 13.42 |
+
+The measured folders total about 8.42 GiB for MuG alone or 11.71 GiB for V32 alone. For both engines, keep at least 20 GiB free on the project drive to allow for download staging and setup caches. These figures exclude user music, generated packages, and later cache growth. First-time setup also downloads dependencies, source repositories, and the selected weights, so use a stable connection.
 
 ### Install
 
@@ -392,15 +448,20 @@ The model reference difficulty under **Model and advanced settings** is only an 
 
 NPS and the preset labels are not official Malody ratings. Package validation checks the ZIP, MC JSON, tracks, timing, and audio references, but it cannot replace importing and play-testing the chart on a device.
 
-### Project data and licensing
+### References, licenses, and disclaimer
 
-Model configurations and separately downloaded weights are stored in `models/`; audio, packages, logs, environments, and caches are stored under the project directory. These local files are excluded from Git by `.gitignore`. Do not commit music, `.mcz` files, model checkpoints, or virtual environments.
+Model configuration and separately downloaded weights live under `models/`; music, packages, logs, environments, and caches live in the project directory and are excluded by `.gitignore`. Do not commit music, `.mcz` files, model checkpoints, or virtual environments.
 
-- MuG weights and charts generated with them are subject to the upstream non-commercial restriction. This repository does not distribute or host the checkpoint.
-- Mapperatorinator’s upstream code and model card identify an MIT license; review the license and model card for the pinned revision.
-- You are responsible for having the rights to download and process music and artwork. Generated charts do not change the rights to source music.
-- Keep AI disclosure metadata when sharing generated charts. Third-party names and marks belong to their respective owners; this project is not officially endorsed by them.
+Startrail is an independent community project. It is not affiliated with or endorsed by Malody, the model authors, or music publishers. It is intended for personal, non-commercial charting practice and research. This repository currently has no root-level `LICENSE`; Mapperatorinator’s MIT terms apply to its upstream components and do not automatically license the entire Startrail repository. Each upstream codebase, checkpoint, and generated output remains subject to its own terms; this README grants no additional rights to music, artwork, or existing charts.
+
+- **MuG Diffusion:** [upstream code and terms](https://github.com/Keytoyze/Mug-Diffusion) and [checkpoint page](https://huggingface.co/ayousanz/Mug-Diffusion-model). The upstream explicitly restricts the model weights and charts generated with them to non-commercial use. Retain the AI disclosure when sharing those charts.
+- **Mapperatorinator V32:** [upstream project license](https://github.com/OliBomby/Mapperatorinator/blob/main/LICENSE) and [the V32 weight revision pinned by this project](https://huggingface.co/OliBomby/Mapperatorinator-v32/tree/74f22583400d259bf424819e11027c17933efe54). Upstream code and model card identify MIT terms; they do not grant rights to input music, artwork, or training material.
+- **Malody:** [official app listing](https://apps.apple.com/us/app/malody/id989630809) (which lists MC support) and [official import guide](http://m.mugzone.net/wiki/175); see also [this project’s MC/MCZ format notes](docs/model-selection.md). A package passing local structure checks has not necessarily been imported and tested on every Malody version or phone.
+- **Music and artwork:** Only download, process, or share audio and images you have permission to use. Local generation does not change the rights to source works. Online search and download do not bypass sign-in, paid access, or DRM.
+- **Difficulty and AI:** NPS and tier labels are generation targets and measured statistics, not official Malody ratings or a guarantee of playability. Play-test before sharing and preserve the engine and AI-origin metadata.
+
+The project does not guarantee generated accuracy, playability, or compatibility with every third-party platform. Check the applicable rights before publishing, sharing, or commercial use.
 
 For development checks, run `python -m pytest -q`, `python -m compileall -q malody_studio tools`, and `node --check web\app.js` from the project root using the project’s Python environment. Automated checks do not cover actual import or playability on a phone.
 
-See also: [model selection](docs/model-selection.md), [other model research](docs/alternative-models-2026-10-02.md), [V32 deployment](docs/v32-deployment.md), [difficulty tuning and validation](docs/studio-v2.md), and [model versions and hashes](models/README.md), plus the [UX requirements and implementation plan](docs/requirements-and-implementation-plan.md).
+See also: [Malody’s MC format support and import guide](https://apps.apple.com/us/app/malody/id989630809), [model selection](docs/model-selection.md), [other model research](docs/alternative-models-2026-10-02.md), [V32 deployment](docs/v32-deployment.md), [difficulty tuning and validation](docs/studio-v2.md), and [model versions and hashes](models/README.md), plus the [UX requirements and implementation plan](docs/requirements-and-implementation-plan.md).
