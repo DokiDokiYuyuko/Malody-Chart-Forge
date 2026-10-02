@@ -1,16 +1,35 @@
-# Malody 4K 谱面工坊 · Malody Chart Forge
+# 星轨谱面工坊 · Startrail
 
-**GitHub repository:** [`DokiDokiYuyuko/Malody-Chart-Forge`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge)
-**中文名称：** Malody 4K 谱面工坊
-**英文名称：** Malody Chart Forge
+<div align="center">
+  <img src="web/assets/startrail-mark.svg" width="92" alt="Startrail 标志">
+  <h1>星轨谱面工坊<br><sub>STARTRAIL · MALODY CHART FORGE</sub></h1>
+  <p><strong>把一首歌，变成四条轨道上的节奏。</strong><br>本地生成 · 六档难度 · 即时预览 · 一键导出 <code>.mcz</code></p>
+  <p><strong>A song in. A four-lane chart out.</strong><br>Local generation · Six difficulty tiers · Live preview · One-click <code>.mcz</code> export</p>
+  <p>
+    <img src="https://img.shields.io/badge/Malody-4K-54cfd2?style=for-the-badge" alt="Malody 4K">
+    <img src="https://img.shields.io/badge/inference-local-52c9a5?style=for-the-badge" alt="Local inference">
+    <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-5679d8?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 and 11">
+    <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/stargazers"><img src="https://img.shields.io/github/stars/DokiDokiYuyuko/Malody-Chart-Forge?style=for-the-badge&color=e999bf" alt="GitHub stars"></a>
+  </p>
+  <p><a href="#简体中文">简体中文</a>　·　<a href="#english">English</a>　·　<a href="#一键配置推荐">快速开始</a></p>
+</div>
 
-面向旧版 Malody 与手机四指 4K 的本地音乐制谱工具。上传一首音乐，选择难度和键型，生成可导入的 `.mcz` 曲包，并在网页中试听、预览四轨和检查实际密度。
+<p align="center"><img src="docs/screenshots/readme-night.png" alt="Startrail 薄荷夜航主题与鼠标流星效果" width="100%"></p>
 
-[English](#english) · [简体中文](#简体中文)
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/readme-light.png" alt="星轨谱面工坊晴空轨道亮色主题" width="100%"></td>
+    <td width="50%"><strong>两种节奏，一套工坊。</strong><br><br>「晴空轨道」以冰蓝、薄荷和淡粉铺开界面；「薄荷夜航」使用亮黑与荧光绿。鼠标移动时，短暂的流星沿轨迹划过。主题和效果都能在页面右上方的「设置」中调整。<br><br><a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge">在 GitHub 查看项目 →</a></td>
+  </tr>
+</table>
 
 <a id="简体中文"></a>
 
-> 这是社区项目，与 Malody 官方无关联。AI 生成谱面应保留 AI 标注；生成结果不代表官方等级，也不保证适合每位玩家。
+## 简体中文
+
+Startrail 是为旧版 Malody 4K 与手机四指游玩设计的本地制谱工具。选择音乐与难度，检查谱面节奏和密度，再将结果打包成可导入的 `.mcz`。
+
+> AI 生成的谱面会在曲包与报告中标明来源。难度数字用于调节生成目标，不是 Malody 官方定级。
 
 ## 功能
 
@@ -18,6 +37,7 @@
 - Easy、Medium、Hard、Expert、Master、Lunatic 六档；逐档调整目标平均 NPS、滚动一秒峰值、同刻按键数、同轨间隔和长条上限。
 - 手机四指规则检查、音符预览、音乐播放、统计报告，以及包含音轨和背景图的 `.mcz` 打包。
 - 可上传本地音乐；也可搜索 YouTube 公开音源并下载到本机后制谱。在线搜索需要网络；本地推理不上传音频。
+- 晴空与薄荷夜航两套主题、可关闭的鼠标流星，以及适配不同屏幕的工作台和曲包页面。
 - 模型权重、音频、缓存、报告和曲包保存在项目目录。模型权重需单独下载，本仓库不分发权重或用户音乐。
 
 ## 系统要求
@@ -35,8 +55,22 @@
 
 ```powershell
 git clone --recurse-submodules https://github.com/DokiDokiYuyuko/Malody-Chart-Forge.git
-cd malody-chart-forge
+cd Malody-Chart-Forge
 ```
+
+### 一键配置（推荐）
+
+先安装 Python 3.12 x64 和 Git，再双击项目根目录的 `一键配置环境.bat`。脚本会让你选择 MuG、V32 或两者，创建项目内环境，按锁文件安装依赖并下载、校验所选权重；MuG 会实际加载权重检查模型结构，V32 会用自动生成的合成节奏音频执行本地冒烟推理。安装结束后可双击 `启动制谱台.bat`。
+
+脚本会提示配置 pip 镜像、Hugging Face 兼容端点和 HTTP/HTTPS 代理；大陆网络可按自己的网络环境填写，留空则使用官方地址或已有环境变量。PyTorch CUDA wheel 地址仍由锁文件固定。MuG 权重下载前会要求确认上游非商业条款。安装日志保存在 `logs/setup.log`，V32 冒烟日志保存在 `logs/v32-setup-smoke.log`。
+
+也可以从 PowerShell 显式传入配置，例如：
+
+```powershell
+.\setup.ps1 -Engine v32 -PipIndexUrl "https://你的可信镜像/simple" -HFEndpoint "https://你的 Hugging Face 兼容端点"
+```
+
+以上是快速入口；下面的命令适合希望逐步控制每个安装环节的用户。
 
 如果之前没有初始化子模块：
 
@@ -62,7 +96,7 @@ py -3.12 -m venv .venv
 
 ### 3. 下载 MuG 模型
 
-MuG 是基础引擎；主服务的就绪状态要求 MuG 权重存在。权重约 1.84 GB。请先阅读模型来源页面的使用条款；该权重及生成谱面有非商业使用限制。
+MuG 是可选生成引擎之一；安装至少一个引擎即可使用制谱台。MuG 权重约 1.84 GB。请先阅读模型来源页面的使用条款；该权重及生成谱面有非商业使用限制。
 
 ```powershell
 .\.venv\Scripts\python.exe tools\download_file.py `
@@ -70,6 +104,12 @@ MuG 是基础引擎；主服务的就绪状态要求 MuG 权重存在。权重�
   models\mug-diffusion\v1.0.0\model.ckpt `
   --workers 4 `
   --sha256 af6ab91337d0ef6b518367082ac3f849448c6daaa01fd987678fb25ea44ca184
+```
+
+验证权重哈希并实际加载模型结构：
+
+```powershell
+.\.venv\Scripts\python.exe tools\validate_mug_install.py
 ```
 
 下载器支持分段续传，并在完成时校验 SHA-256。`models/mug-diffusion/v1.0.0/model.yaml` 已包含在代码仓库中；它的校验值登记在 [`models/README.md`](models/README.md)。权重来自 [MuG Diffusion 模型镜像](https://huggingface.co/ayousanz/Mug-Diffusion-model)，上游实现和条款见 [Keytoyze/Mug-Diffusion](https://github.com/Keytoyze/Mug-Diffusion)。
@@ -89,6 +129,7 @@ py -3.12 -m venv runtime\mapperatorinator-venv
 ```powershell
 .\.venv\Scripts\python.exe tools\download_mapperatorinator.py
 .\.venv\Scripts\python.exe tools\download_mapperatorinator.py --base
+.\runtime\mapperatorinator-venv\Scripts\python.exe tools\validate_v32_install.py
 ```
 
 如需使用新的上游版本，应先确认模型结构与文件哈希，再显式传入 revision：
@@ -120,9 +161,11 @@ Invoke-WebRequest `
 .\start.ps1
 ```
 
-浏览器会打开 `http://127.0.0.1:8765`。服务只绑定本机地址，不要将其端口转发到公网。状态接口为 `http://127.0.0.1:8765/api/health`。
+启动器通常使用 `http://127.0.0.1:8765`。若旧版服务仍占用该端口，启动器会检测版本并在 `8766` 启动更新后的应用。服务只绑定本机地址，不要将端口转发到公网；健康状态接口与网页使用相同端口。
 
 选择本地音乐或公开在线音源，填写/确认曲名和音乐人，勾选要生成的难度，点击生成。完成后下载 `.mcz`；曲包默认位于 `outputs/<任务编号>/malody-4k.mcz`，同目录的 `report.json` 保存参数、统计和检查结果。
+
+网页使用「**星轨谱面工坊 · Startrail**」作为界面名称。点击顶部「我的曲包」右侧的「设置」，可切换「晴空轨道」亮色主题和「薄荷夜航」暗色主题，并开启或关闭鼠标流星拖尾。选择会保存在当前浏览器，刷新后仍生效；「恢复外观默认」只调整外观，不改变谱面生成参数。系统启用减少动态效果时，拖尾自动停用。
 
 ## 难度和模型设置
 
@@ -192,6 +235,7 @@ node --check web\app.js
 - [V32 部署和限制](docs/v32-deployment.md)
 - [六档参数和验证记录](docs/studio-v2.md)
 - [模型权重版本和校验值](models/README.md)
+- [用户体验优化需求与实施方案](docs/requirements-and-implementation-plan.md)
 
 ---
 
@@ -199,7 +243,7 @@ node --check web\app.js
 
 ## English
 
-Malody Chart Forge is a local music-to-chart tool for classic Malody 4K, designed with mobile four-finger play in mind. It can use MuG Diffusion or Mapperatorinator V32 to generate charts and package them with audio into an import-ready `.mcz` file.
+**Startrail · Malody Chart Forge** turns a song into a four-lane rhythm chart for classic Malody 4K. Generate locally, shape six difficulty tiers, review the timing in the browser, and export an `.mcz` package.
 
 > This is an independent community project and is not affiliated with Malody. Generated charts should retain their AI disclosure. Their displayed difficulty is an estimate, not an official rating or a guarantee of playability.
 
@@ -209,6 +253,7 @@ Malody Chart Forge is a local music-to-chart tool for classic Malody 4K, designe
 - Create Easy, Medium, Hard, Expert, Master, and Lunatic charts with configurable density and playability limits.
 - Preview four lanes, listen to the music, inspect chart statistics, and export an `.mcz` package with its audio and background image.
 - Upload local music. Optional YouTube search and download is available for publicly accessible tracks.
+- Switch between a sky-toned light theme and a glossy mint-night theme, with optional mouse meteor trails.
 - Inference runs locally. Model weights, music, generated packages, and caches stay in the project folders; model weights are downloaded separately.
 
 ### Requirements
@@ -225,6 +270,20 @@ Run these commands in PowerShell. They clone the source repositories used by the
 git clone --recurse-submodules https://github.com/DokiDokiYuyuko/Malody-Chart-Forge.git
 cd Malody-Chart-Forge
 ```
+
+### One-click setup (recommended)
+
+Install Python 3.12 x64 and Git, then double-click `一键配置环境.bat` in the project folder. Choose MuG, V32, or both. The script creates project-local environments, installs pinned dependencies, and downloads and verifies the selected model weights. It loads MuG to check the checkpoint and model structure, and runs V32 inference on a generated synthetic rhythm signal. Setup validation never uses your music. You can then launch the app with `启动制谱台.bat`.
+
+The script asks for an optional pip mirror, Hugging Face-compatible endpoint, and HTTP/HTTPS proxy. Leave fields blank to use official endpoints or existing environment variables. The CUDA PyTorch wheel source stays pinned in the lock files. Before downloading MuG, the script asks you to confirm its upstream non-commercial terms. Logs are saved under `logs/`.
+
+For example, configure a V32 install from PowerShell with:
+
+```powershell
+.\setup.ps1 -Engine v32 -PipIndexUrl "https://your-trusted-mirror/simple" -HFEndpoint "https://your-hugging-face-compatible-endpoint"
+```
+
+Manual steps follow for users who want to control each stage:
 
 If you already cloned without submodules:
 
@@ -248,7 +307,7 @@ Check whether PyTorch can see your GPU:
 
 ### Install model weights
 
-**MuG Diffusion** is the base engine and its checkpoint is about 1.84 GB. Review the upstream terms before downloading: the weights and charts generated with them are restricted to non-commercial use. Download into the project’s `models/` directory and verify the SHA-256 hash:
+**MuG Diffusion** is one of the available engines; installing at least one engine enables chart generation. Its checkpoint is about 1.84 GB. Review the upstream terms before downloading: the weights and charts generated with them are restricted to non-commercial use. Download into the project’s `models/` directory and verify the SHA-256 hash:
 
 ```powershell
 .\.venv\Scripts\python.exe tools\download_file.py `
@@ -256,6 +315,12 @@ Check whether PyTorch can see your GPU:
   models\mug-diffusion\v1.0.0\model.ckpt `
   --workers 4 `
   --sha256 af6ab91337d0ef6b518367082ac3f849448c6daaa01fd987678fb25ea44ca184
+```
+
+Verify the checkpoint hash and load the model structure:
+
+```powershell
+.\.venv\Scripts\python.exe tools\validate_mug_install.py
 ```
 
 The model configuration is included in the repository. The checkpoint is not. See [MuG Diffusion on Hugging Face](https://huggingface.co/ayousanz/Mug-Diffusion-model) and the [upstream implementation and terms](https://github.com/Keytoyze/Mug-Diffusion).
@@ -268,6 +333,7 @@ py -3.12 -m venv runtime\mapperatorinator-venv
 .\runtime\mapperatorinator-venv\Scripts\python.exe -m pip install -r runtime\mapperatorinator-requirements-lock.txt
 .\.venv\Scripts\python.exe tools\download_mapperatorinator.py
 .\.venv\Scripts\python.exe tools\download_mapperatorinator.py --base
+.\runtime\mapperatorinator-venv\Scripts\python.exe tools\validate_v32_install.py
 ```
 
 The downloader pins a verified Hugging Face revision and checks file hashes. For model versions, hashes, and deployment limits, see [`models/README.md`](models/README.md) and [`docs/v32-deployment.md`](docs/v32-deployment.md). V32 requires its own environment and CUDA; the web app disables it when either the environment or weights are missing.
@@ -293,9 +359,11 @@ After installing at least one engine, double-click `启动制谱台.bat` or run:
 .\start.ps1
 ```
 
-Open `http://127.0.0.1:8765` if the browser does not open automatically. The service binds to localhost; do not forward its port to the public internet.
+The launcher normally uses `http://127.0.0.1:8765`. If an older service still occupies that port, it checks the version and starts the updated app on `8766`. The service binds to localhost; do not expose it to the public internet.
 
 Upload an audio file or select an available public track, confirm its title and artist, choose one or more difficulties, and click **Generate 4K charts**. Download the resulting `.mcz` from the page. Output packages and a `report.json` are saved under `outputs/<job-id>/`.
+
+The web interface is named **Startrail (星轨谱面工坊)**. Open **Settings (设置)** beside the library tab to choose the light sky theme or the dark mint theme, and toggle mouse meteor trails. Preferences are saved in your current browser across reloads. Restoring appearance defaults does not change chart generation settings. Trails are disabled when your system requests reduced motion.
 
 You can also generate charts from PowerShell. For example, to create Easy, Hard, and Lunatic charts with V32:
 
@@ -333,4 +401,4 @@ Model configurations and separately downloaded weights are stored in `models/`; 
 
 For development checks, run `python -m pytest -q`, `python -m compileall -q malody_studio tools`, and `node --check web\app.js` from the project root using the project’s Python environment. Automated checks do not cover actual import or playability on a phone.
 
-See also: [model selection](docs/model-selection.md), [other model research](docs/alternative-models-2026-10-02.md), [V32 deployment](docs/v32-deployment.md), [difficulty tuning and validation](docs/studio-v2.md), and [model versions and hashes](models/README.md).
+See also: [model selection](docs/model-selection.md), [other model research](docs/alternative-models-2026-10-02.md), [V32 deployment](docs/v32-deployment.md), [difficulty tuning and validation](docs/studio-v2.md), and [model versions and hashes](models/README.md), plus the [UX requirements and implementation plan](docs/requirements-and-implementation-plan.md).

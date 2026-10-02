@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <defs>
+    <linearGradient id="orbit" x1="15" y1="16" x2="82" y2="82" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#75e7ef"/>
+      <stop offset=".52" stop-color="#8ce8bc"/>
+      <stop offset="1" stop-color="#fa9fc9"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="12" y1="10" x2="84" y2="90" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1b3851"/>
+      <stop offset="1" stop-color="#101c31"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="90" height="90" rx="25" fill="url(#glass)"/>
+  <path d="M19 64V39h9v25h-9Zm17 0V25h9v39h-9Zm17 0V34h9v30h-9Zm17 0V19h9v45h-9Z" fill="url(#orbit)"/>
+  <path d="m69 14 2.2-6 2.2 6 6 2.2-6 2.2-2.2 6-2.2-6-6-2.2 6-2.2Z" fill="#caffeb"/>
+  <path d="M13 72c18 16 51 16 70-5" stroke="url(#orbit)" stroke-linecap="round" stroke-width="2.5" opacity=".78"/>
+  <circle cx="80" cy="66" r="3" fill="#ffa7d4"/>
+</svg>

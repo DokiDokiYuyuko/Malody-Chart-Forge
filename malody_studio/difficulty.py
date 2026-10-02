@@ -16,7 +16,7 @@ PRESETS = {
     'hard': dict(label='Hard', sr=8.0, rate=8.5, chord_size=1.15, gap=80, chord=3, peak=13, hold_ms=650),
     'expert': dict(label='Expert', sr=8.0, rate=13.0, chord_size=1.25, gap=55, chord=4, peak=19, hold_ms=400),
     'master': dict(label='Master', sr=8.0, rate=18.5, chord_size=1.6, gap=45, chord=4, peak=27, hold_ms=250),
-    'lunatic': dict(label='Lunatic · 发狂', sr=8.0, rate=26.0, chord_size=2.1, gap=35, chord=4, peak=38, hold_ms=180),
+    'lunatic': dict(label='Lunatic', sr=8.0, rate=26.0, chord_size=2.1, gap=35, chord=4, peak=38, hold_ms=180),
 }
 PATTERN_CHOICES = ('balanced', 'stream', 'jumpstream', 'handstream', 'chordjack',
                    'stamina', 'jackspeed', 'technical')

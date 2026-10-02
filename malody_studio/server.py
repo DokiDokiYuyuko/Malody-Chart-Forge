@@ -1,12 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
+import hashlib
 from pathlib import Path
 import threading
 import traceback
 import uuid
 import re
 import math
+import shutil
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request, Query
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +19,27 @@ app = FastAPI(title='Malody Chart Forge')
 pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='chart-generator')
 jobs = {}
 lock = threading.Lock()
+MUG_WEIGHT_BYTES = 1839231053
+MUG_WEIGHT_SHA256 = 'af6ab91337d0ef6b518367082ac3f849448c6daaa01fd987678fb25ea44ca184'
+_weight_verify_lock = threading.Lock()
+_weight_verify_cache = {'signature': None, 'valid': False}
+
+def mug_weights_ready():
+    try:
+        stat = WEIGHTS.stat()
+    except OSError:
+        return False
+    signature = (str(WEIGHTS.resolve()), stat.st_size, stat.st_mtime_ns)
+    with _weight_verify_lock:
+        if _weight_verify_cache['signature'] == signature:
+            return _weight_verify_cache['valid']
+        valid = stat.st_size == MUG_WEIGHT_BYTES
+        if valid:
+            with WEIGHTS.open('rb') as stream:
+                valid = hashlib.file_digest(stream, 'sha256').hexdigest() == MUG_WEIGHT_SHA256
+        _weight_verify_cache.update(signature=signature, valid=valid)
+        return valid
+
 for directory in (ROOT / 'outputs').iterdir():
     state = directory / 'job.json'
     if state.is_file():
@@ -181,21 +204,48 @@ def ensure_engine(options):
         from .mapperatorinator import ready
         available = ready()
     else:
-        available = WEIGHTS.is_file() and WEIGHTS.stat().st_size == 1839231053
+        available = mug_weights_ready()
     if not available:
         raise HTTPException(503, '所选模型尚未完成部署，请选择其他引擎')
 
 @app.get('/api/health')
 def health():
     import torch
-    from .mapperatorinator import ready as v32_ready
-    mug_ready = WEIGHTS.is_file() and WEIGHTS.stat().st_size == 1839231053
-    return {'ready': WEIGHTS.is_file() and WEIGHTS.stat().st_size == 1839231053,
-            'engine': 'MuG Diffusion v1.0.0', 'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU',
-            'reference': (ROOT / 'uploads' / 'reference-sirius.m4a').is_file(),
-            'engines': {'mug': {'label': 'MuG Diffusion', 'ready': mug_ready},
-                        'v32': {'label': 'Mapperatorinator V32（实验）', 'ready': v32_ready()}},
-            'presets': PRESETS}
+    from .mapperatorinator import ready as v32_ready, PYTHON as V32_PYTHON, MODEL_ROOT as V32_MODEL_ROOT
+
+    cuda_available = torch.cuda.is_available()
+    gpu_name = torch.cuda.get_device_name(0) if cuda_available else None
+    mug_exists = WEIGHTS.is_file()
+    mug_size_ok = mug_exists and WEIGHTS.stat().st_size == MUG_WEIGHT_BYTES
+    mug_ready = mug_weights_ready()
+    v32_python_ready = V32_PYTHON.is_file()
+    v32_weights_ready = all(
+        (V32_MODEL_ROOT / folder / 'model.safetensors').is_file() and
+        (V32_MODEL_ROOT / folder / 'model.safetensors').stat().st_size == 865900700
+        for folder in ('v32-mania', 'v32-timing'))
+    v32_ready_state = v32_ready() and cuda_available
+    mug_reason = None if mug_ready else ('MuG 权重 SHA-256 不匹配，请重新运行一键配置环境.bat 下载校验。'
+                                         if mug_size_ok else 'MuG 权重大小不正确，请重新运行一键配置环境.bat 校验。'
+                                         if mug_exists else '缺少 MuG 模型权重，请运行“一键配置环境.bat”。')
+    v32_reason = None if v32_ready_state else (
+        'V32 需要可用的 NVIDIA CUDA 显卡，请检查驱动和 V32 环境。' if not cuda_available else
+        '缺少 V32 独立 Python 环境，请运行“一键配置环境.bat”并选择 V32。' if not v32_python_ready else
+        '缺少 V32 模型权重或部署校验文件，请运行“一键配置环境.bat”并选择 V32。')
+    return {
+        'api_version': 2,
+        'ready': mug_ready or v32_ready_state,
+        'gpu': gpu_name or 'CPU（生成速度可能较慢）',
+        'cuda_available': cuda_available,
+        'reference': (ROOT / 'uploads' / 'reference-sirius.m4a').is_file(),
+        'engines': {
+            'mug': {'label': 'MuG Diffusion', 'ready': mug_ready, 'reason': mug_reason,
+                    'weights_ready': mug_ready, 'python_ready': (ROOT / '.venv' / 'Scripts' / 'python.exe').is_file(),
+                    'device': gpu_name or 'CPU'},
+            'v32': {'label': 'Mapperatorinator V32（实验）', 'ready': v32_ready_state,
+                    'reason': v32_reason, 'weights_ready': v32_weights_ready,
+                    'python_ready': v32_python_ready, 'cuda_available': cuda_available,
+                    'device': gpu_name or '不可用'}},
+        'presets': PRESETS}
 
 @app.get('/api/jobs')
 def list_jobs():
@@ -204,10 +254,35 @@ def list_jobs():
                 for j in sorted(jobs.values(), key=lambda j: j['created'], reverse=True)[:20]]
 
 @app.get('/api/history')
-def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(6, ge=1, le=24), q: str = Query('', max_length=200)):
+def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(6, ge=1, le=24),
+                     q: str = Query('', max_length=200), engine: str = Query(''),
+                     status: str = Query(''), difficulty: str = Query(''),
+                     sort: str = Query('newest')):
+    allowed_status = {'', 'queued', 'running', 'completed', 'failed'}
+    allowed_engine = {'', 'mug', 'v32'}
+    allowed_sort = {'newest', 'oldest', 'title'}
+    if status not in allowed_status or engine not in allowed_engine or sort not in allowed_sort:
+        raise HTTPException(400, '曲包筛选条件无效')
+    needle = q.casefold()
     with lock:
-        matches = sorted((j for j in jobs.values() if q.casefold() in j['title'].casefold()),
-                         key=lambda j: j['created'], reverse=True)
+        matches = []
+        for job in jobs.values():
+            if needle and needle not in (job.get('title', '') + ' ' + job.get('artist', '')).casefold():
+                continue
+            options = job.get('options', {})
+            if engine and options.get('engine', 'mug') != engine:
+                continue
+            if status and job.get('status') != status:
+                continue
+            if difficulty and difficulty not in options.get('difficulties', []):
+                continue
+            matches.append(job)
+        if sort == 'oldest':
+            matches.sort(key=lambda j: j.get('created', ''))
+        elif sort == 'title':
+            matches.sort(key=lambda j: (j.get('title', '').casefold(), j.get('created', '')), reverse=False)
+        else:
+            matches.sort(key=lambda j: j.get('created', ''), reverse=True)
         total = len(matches)
         pages = max(1, (total + page_size - 1) // page_size)
         page = min(page, pages)
@@ -215,17 +290,32 @@ def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(6, ge=1
         for job in matches[(page-1)*page_size:page*page_size]:
             report = job.get('report', {})
             artwork = report.get('artwork', {})
-            items.append({k: job[k] for k in ('id', 'title', 'artist', 'status', 'created')})
-            items[-1].update(engine=job['options'].get('engine', 'mug'),
-                             difficulties=[d['label'] for d in report.get('difficulties', [])],
+            items.append({k: job[k] for k in ('id', 'title', 'artist', 'status', 'created') if k in job})
+            items[-1].update(engine=job.get('options', {}).get('engine', 'mug'),
+                             difficulties=[d['key'] for d in report.get('difficulties', [])] or
+                                           job.get('options', {}).get('difficulties', []),
+                             difficulty_labels=[d['label'] for d in report.get('difficulties', [])],
+                             download=f"/api/jobs/{job['id']}/download" if job.get('status') == 'completed' else None,
                              cover=f"/api/jobs/{job['id']}/files/background.jpg" if artwork.get('status') == 'ready' else None)
             from .artwork import video_id_from_url
             try:
-                video_id = job['options'].get('artwork_video_id') or video_id_from_url(job['options'].get('source', ''))
+                video_id = job.get('options', {}).get('artwork_video_id') or video_id_from_url(job.get('options', {}).get('source', ''))
             except ValueError:
                 video_id = None
             items[-1]['thumbnail'] = f'https://i.ytimg.com/vi/{video_id}/hqdefault.jpg' if video_id else None
-        return {'items': items, 'total': total, 'total_all': len(jobs), 'page': page, 'pages': pages, 'page_size': page_size}
+        return {'items': items, 'total': total, 'total_all': len(jobs), 'page': page,
+                'pages': pages, 'page_size': page_size, 'filters': {'engine': engine, 'status': status,
+                                                                    'difficulty': difficulty, 'sort': sort}}
+
+@app.get('/api/storage')
+def storage_usage():
+    def total_bytes(directory):
+        return sum(path.stat().st_size for path in directory.rglob('*') if path.is_file())
+    outputs = ROOT / 'outputs'
+    uploads = ROOT / 'uploads'
+    return {'outputs_bytes': total_bytes(outputs), 'uploads_bytes': total_bytes(uploads),
+            'total_bytes': total_bytes(outputs) + total_bytes(uploads),
+            'free_bytes': shutil.disk_usage(ROOT).free}
 
 @app.get('/api/jobs/{job_id}')
 def job_status(job_id: str):
@@ -264,6 +354,8 @@ async def upload(file: UploadFile = File(...), title: str = Form(...), artist: s
                 target.write(chunk)
         if not size:
             raise HTTPException(400, '音频文件为空')
+        # Retain only this job's upload basename so deletion can safely clean up.
+        options['_source_upload'] = source.name
         return new_job(source, options)
     except Exception:
         source.unlink(missing_ok=True)
@@ -296,6 +388,80 @@ def reference(difficulties: str = Form('["easy","normal","hard"]'), ln_ratio: fl
     options['source'] = 'https://www.youtube.com/watch?v=UKZt1vq8bKI'
     options['artwork_video_id'] = 'UKZt1vq8bKI'
     return new_job(source, options)
+
+@app.post('/api/jobs/{job_id}/regenerate')
+def regenerate_job(job_id: str):
+    if not re.fullmatch(r'[0-9a-f]{32}', job_id):
+        raise HTTPException(404, '曲包记录不存在')
+    with lock:
+        original = dict(get_job(job_id))
+    state = original.get('status')
+    if state not in ('completed', 'failed'):
+        raise HTTPException(409, '任务仍在运行或排队中，完成后才能重试')
+    options = dict(original.get('options', {}))
+    source_job_id = None
+    if state == 'completed':
+        source = ROOT / 'outputs' / job_id / '0' / 'audio.ogg'
+        source_job_id = job_id
+    else:
+        parent_id = options.get('_reuse_source_job_id')
+        if isinstance(parent_id, str) and re.fullmatch(r'[0-9a-f]{32}', parent_id):
+            source = ROOT / 'outputs' / parent_id / '0' / 'audio.ogg'
+            source_job_id = parent_id
+        else:
+            upload_name = options.get('_source_upload')
+            if isinstance(upload_name, str) and re.fullmatch(r'[0-9a-f]{32}\.[a-z0-9]{1,8}', upload_name):
+                source = ROOT / 'uploads' / upload_name
+                source_job_id = job_id
+            elif options.get('source') == 'https://www.youtube.com/watch?v=UKZt1vq8bKI' and (ROOT / 'uploads' / 'reference-sirius.m4a').is_file():
+                source = ROOT / 'uploads' / 'reference-sirius.m4a'
+            elif options.get('artwork_video_id'):
+                try:
+                    from .music import ready_audio
+                    source, _ = ready_audio(options['artwork_video_id'])
+                except (ValueError, KeyError):
+                    raise HTTPException(409, '原音乐缓存已失效，请重新导入音乐')
+            else:
+                raise HTTPException(409, '原始音乐不可用，请重新上传或导入音乐')
+    if not source.is_file():
+        raise HTTPException(409, '原始音乐缺失，请重新上传或导入音乐')
+    options.pop('_source_upload', None)
+    options['title'] = original.get('title', options.get('title', ''))
+    options['artist'] = original.get('artist', options.get('artist', ''))
+    if source_job_id:
+        options['_reuse_source_job_id'] = source_job_id
+    else:
+        options.pop('_reuse_source_job_id', None)
+    ensure_engine(options)
+    return new_job(source, options)
+
+@app.delete('/api/jobs/{job_id}')
+def delete_job(job_id: str):
+    if not re.fullmatch(r'[0-9a-f]{32}', job_id):
+        raise HTTPException(404, '曲包记录不存在')
+    with lock:
+        job = get_job(job_id)
+        if job.get('status') in ('queued', 'running'):
+            raise HTTPException(409, '任务正在运行，完成或失败后才能删除')
+        if any(item.get('status') in ('queued', 'running') and
+               item.get('options', {}).get('_reuse_source_job_id') == job_id
+               for item in jobs.values()):
+            raise HTTPException(409, '其他任务正在使用这份音频，暂时不能删除')
+        directory = (ROOT / 'outputs' / job_id).resolve()
+        output_root = (ROOT / 'outputs').resolve()
+        if directory.parent != output_root or not directory.is_dir():
+            raise HTTPException(404, '曲包文件夹不存在')
+        upload_name = job.get('options', {}).get('_source_upload')
+        upload_path = None
+        if isinstance(upload_name, str) and re.fullmatch(r'[0-9a-f]{32}\.[a-z0-9]{1,8}', upload_name):
+            candidate = (ROOT / 'uploads' / upload_name).resolve()
+            if candidate.parent == (ROOT / 'uploads').resolve():
+                upload_path = candidate
+        shutil.rmtree(directory)
+        if upload_path:
+            upload_path.unlink(missing_ok=True)
+        del jobs[job_id]
+    return {'deleted': job_id}
 
 @app.get('/api/jobs/{job_id}/download')
 def download(job_id: str):

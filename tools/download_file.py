@@ -2,6 +2,7 @@
 import argparse
 import concurrent.futures
 import hashlib
+import shutil
 import json
 from pathlib import Path
 import time
@@ -70,6 +71,9 @@ def download(url, destination, workers=12, sha256=None, use_curl=False):
                     target.write(data)
     actual = digest.hexdigest()
     if sha256 and actual != sha256:
+        temporary.unlink(missing_ok=True)
+        destination.unlink(missing_ok=True)
+        shutil.rmtree(parts, ignore_errors=True)
         raise RuntimeError(f'SHA256 mismatch: {actual}')
     temporary.replace(destination)
     print(json.dumps({'path': str(destination), 'bytes': size, 'sha256': actual}), flush=True)

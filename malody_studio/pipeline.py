@@ -101,7 +101,7 @@ def run(source, directory, options, progress):
               'audio_format': 'OGG Vorbis / 44100 Hz / stereo',
               'timing_policy': '保留 V32 分段 BPM；音符取模型锚点或实际音频起音，不强制节拍吸附' if use_v32 else '音符取 MuG 锚点或实际音频起音；分数拍序列化，不强制节拍吸附',
               'generation_settings': {key: value for key, value in options.items()
-                                     if key != 'artwork_video_id'}}
+                                     if key != 'artwork_video_id' and not key.startswith('_')}}
     from .artwork import prepare_artwork
     progress('获取 YouTube 封面并检查曲包', 96)
     background, artwork = prepare_artwork(options.get('artwork_video_id'))
