@@ -1,0 +1,12 @@
+{
+  "_from_model_config": true,
+  "bos_token_id": 1,
+  "decoder_start_token_id": 1,
+  "disable_compile": true,
+  "do_sample": true,
+  "eos_token_id": 2,
+  "max_length": 2560,
+  "pad_token_id": 0,
+  "top_k": 0,
+  "transformers_version": "4.57.3"
+}

@@ -1,0 +1,29 @@
+{
+  "repo": "OliBomby/Mapperatorinator-v32",
+  "revision": "74f22583400d259bf424819e11027c17933efe54",
+  "subfolder": "gamemode=3",
+  "files": [
+    {
+      "file": "config.json",
+      "bytes": 2972,
+      "sha256": "38486bbba93ba1f8b2701ade96d9b356d4e5d57e5b6fdd4ec118c0f03af198db"
+    },
+    {
+      "file": "generation_config.json",
+      "bytes": 259,
+      "sha256": "10b901beeb3c982c16c53cd5b37a4f9b3d4674fc70cbc3e64c7b20fdb0433f51"
+    },
+    {
+      "file": "model.safetensors",
+      "bytes": 865900700,
+      "sha256": "3d5d1c2a01ad462bcc99bafaaf44174bc47be099724574b17cd68016be5a863f"
+    },
+    {
+      "file": "tokenizer.json",
+      "bytes": 4976412,
+      "sha256": "737148191316146ba76b6b7b0c59646baff6002ef834734dd113a8eb1e5036da"
+    }
+  ],
+  "source": "https://huggingface.co/OliBomby/Mapperatorinator-v32",
+  "license": "mit"
+}

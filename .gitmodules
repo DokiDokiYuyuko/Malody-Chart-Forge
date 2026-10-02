@@ -1,0 +1,6 @@
+[submodule "vendor/Mug-Diffusion"]
+	path = vendor/Mug-Diffusion
+	url = https://github.com/Keytoyze/Mug-Diffusion.git
+[submodule "vendor/Mapperatorinator"]
+	path = vendor/Mapperatorinator
+	url = https://github.com/OliBomby/Mapperatorinator.git

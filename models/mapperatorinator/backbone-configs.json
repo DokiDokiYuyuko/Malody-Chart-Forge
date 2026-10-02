@@ -1,0 +1,16 @@
+[
+  {
+    "repo": "openai/whisper-small",
+    "revision": "973afd24965f72e36ca33b3055d56a652f456b4d",
+    "file": "models\\mapperatorinator\\backbone-configs\\openai-whisper-small\\config.json",
+    "bytes": 1967,
+    "sha256": "e6a2b489da1b5aed65a8eb8d1e7466fa867ad5643a8bc138ba708bd56b2875c4"
+  },
+  {
+    "repo": "openai/whisper-base",
+    "revision": "e37978b90ca9030d5170a5c07aadb050351a65bb",
+    "file": "models\\mapperatorinator\\backbone-configs\\openai-whisper-base\\config.json",
+    "bytes": 1983,
+    "sha256": "a153c53883a6799b6f056b4a8d1a515c9926d03994682ba88a7616618d7da0c1"
+  }
+]

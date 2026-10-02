@@ -1,0 +1,30 @@
+# Local Python environments and package caches
+.venv/
+runtime/mapperatorinator-venv/
+runtime/wheels/
+runtime/bin/yt-dlp.exe
+__pycache__/
+.pytest_cache/
+
+# Generated data, downloads and local logs
+cache/
+uploads/
+outputs/
+logs/
+*.log
+*.part
+*.assembling
+*.parts/
+
+# Large model weights: fetch separately using the README instructions
+models/**/*.ckpt
+models/**/*.safetensors
+
+# Local settings and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,17 @@
+{
+  "repo": "ayousanz/Mug-Diffusion-model",
+  "source": "https://huggingface.co/ayousanz/Mug-Diffusion-model",
+  "source_code_revision": "c2903d4e3d7216d94ef512a9872bc77423c6e0ac",
+  "files": [
+    {
+      "file": "model.ckpt",
+      "bytes": 1839231053,
+      "sha256": "af6ab91337d0ef6b518367082ac3f849448c6daaa01fd987678fb25ea44ca184"
+    },
+    {
+      "file": "model.yaml",
+      "bytes": 3859,
+      "sha256": "aa70281a92f57e3abfed75e78d2bd455ed206dccd660b0893c7318abc3b26901"
+    }
+  ]
+}
