@@ -43,6 +43,7 @@ Startrail 是为旧版 Malody 4K 与手机四指游玩设计的本地制谱工�
 - 可上传本地音乐；也可搜索 YouTube 公开音源并下载到本机后制谱。在线搜索需要网络；本地推理不上传音频。
 - 晴空、蜜桃、月雾、海盐、薄荷夜航五套主题；可关闭的鼠标流星；适配不同屏幕的工作台和曲包页面。
 - 模型权重、音频、缓存、报告和曲包保存在项目目录。模型权重需单独下载，本仓库不分发权重或用户音乐。
+- 从 YouTube 链接导入到 `.mcz` 输出的完整流程见下方[双语流程图](#workflow)。
 
 ## 配置要求与实测表现
 
@@ -73,6 +74,11 @@ V32 锁定 CUDA 13.0 wheel，Windows 建议安装 NVIDIA R580 系列或更新驱
 | 两个引擎全部安装合计 | 13.42 |
 
 仅装 MuG 时，上述目录合计约 8.42 GiB；仅装 V32 约 11.71 GiB。若安装两个引擎，建议项目所在磁盘至少预留 20 GiB，以覆盖下载临时文件和安装缓存；表中没有计算用户音乐、输出曲包和后续缓存。首次配置还需要稳定网络下载依赖、源码和所选权重。
+
+<a id="workflow"></a>
+## 工作流程图
+
+<p align="center"><img src="docs/architecture-flow.svg" alt="Startrail bilingual workflow: YouTube link, audio-only local processing, model branches, difficulty calibration, validation, and MCZ export" width="100%"></p>
 
 ## 安装
 
@@ -289,6 +295,7 @@ Startrail 是社区独立项目，与 Malody、模型作者、音乐发行方均
 - Upload local music. Optional YouTube search and download is available for publicly accessible tracks.
 - Choose among five palettes (Sky, Peach, Moon Mist, Sea Salt, and Mint Night), with optional mouse meteor trails and a responsive, paginated chart library.
 - Inference runs locally. Model weights, music, generated packages, and caches stay in the project folders; model weights are downloaded separately.
+- Follow the [bilingual workflow diagram](#workflow) from a public YouTube link to a validated `.mcz` package.
 
 ### Hardware and measured performance
 
