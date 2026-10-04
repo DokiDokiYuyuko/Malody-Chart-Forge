@@ -1,0 +1,17 @@
+/* Frequency remains adjacent to a complete four-lane playfield at every width. */
+.spectrum-stage{display:flex;min-width:0;min-height:0;width:100%;overflow:hidden;position:relative}
+.spectrum-column{flex:0 0 clamp(120px,27%,280px);min-width:96px;position:relative;border-right:1px solid var(--theme-line,#315568);align-self:stretch;overflow:hidden;background:#0a1c29}
+.spectrum-column canvas{position:absolute;inset:0;display:block;width:100%!important;height:100%;min-width:0}
+.spectrum-chart-host{flex:1;min-width:0;min-height:0;position:relative;display:flex;align-self:stretch;overflow:hidden}
+.spectrum-chart-host>.adv-canvases{position:absolute;inset:0;display:flex;width:100%;height:100%;min-height:0}
+.spectrum-chart-host canvas{flex:1;min-width:0;display:block;width:50%;height:100%}
+.spectrum-chart-host canvas[hidden]{display:none}
+.spectrum-chart-host.arcade-active>.adv-canvases{visibility:hidden}
+.spectrum-stage[data-narrow=true] .spectrum-column{flex-basis:clamp(96px,29%,180px)}
+.spectrum-stage[data-narrow=true][data-ab=before] #adv-chart-after,.spectrum-stage[data-narrow=true][data-ab=after] #adv-chart-before{display:none}
+.spectrum-stage[data-narrow=true][data-ab=after] #adv-chart-after:not([hidden]){display:block}
+.spectrum-stage[data-narrow=true] .spectrum-chart-host canvas{width:100%}
+[data-theme=dark] .spectrum-column{border-color:#315d50}
+@media(prefers-contrast:more){.spectrum-column{border-right-width:2px}}
+@media(max-width:1180px){.spectrum-stage.adv-preview-stage{flex:0 0 520px;min-height:520px;height:520px}.adv-preview{flex-shrink:0}}
+@media(max-width:650px){.spectrum-stage.adv-preview-stage{flex-basis:420px;min-height:420px;height:420px}}

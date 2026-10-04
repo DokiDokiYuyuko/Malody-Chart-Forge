@@ -2,7 +2,7 @@ import copy
 import json
 import zipfile
 import pytest
-from malody_studio.charts import Note, serialize, validate_chart, clean_notes, package, beat_value
+from malody_studio.charts import Note, serialize, validate_chart, clean_notes, package, beat_value, ChartStructureError
 from malody_studio.paths import PRESETS
 
 def test_preserve_time_and_negative_bgm_offset():
@@ -19,6 +19,13 @@ def test_hold_across_bpm_change():
     assert validate_chart(chart, 2000)['valid']
     with pytest.raises(ValueError):
         validate_chart(chart, 1700)
+
+def test_track_conflict_reports_lane_and_timestamp():
+    chart=serialize([Note(0,0,1000),Note(500,0)],'test','test','4K',120)
+    with pytest.raises(ChartStructureError) as caught:
+        validate_chart(chart,3000)
+    assert caught.value.lane==0
+    assert caught.value.start_ms==500
 
 @pytest.mark.parametrize('event', [
     {'beat': [1, 0, 1], 'column': 0},
@@ -44,8 +51,16 @@ def test_zip_contains_real_ogg_and_utf8_chart(tmp_path):
     audio = tmp_path / 'source.ogg'
     sf.write(audio, np.zeros(44100), 44100, format='OGG', subtype='VORBIS')
     chart = serialize([Note(500, 2)], '天狼星', 'ヰ世界情緒', '入门', 120)
+    chart['time'].extend([
+        {'beat': [1, 0, 1], 'bpm': 120.0},
+        {'beat': [2, 0, 1], 'bpm': 90.0},
+    ])
     archive = package(tmp_path, {'easy': chart}, audio, {'duration': 1})
     with zipfile.ZipFile(archive) as z:
+        assert '0/' in z.namelist()
+        assert '0/generation.txt' not in z.namelist()
         assert z.read('0/audio.ogg')[:4] == b'OggS'
-        assert json.loads(z.read('0/easy.mc'))['meta']['song']['title'] == '天狼星'
+        packed = json.loads(z.read('0/easy.mc'))
+        assert packed['meta']['song']['title'] == '天狼星'
+        assert packed['time'] == [chart['time'][0], chart['time'][2]]
         assert z.testzip() is None

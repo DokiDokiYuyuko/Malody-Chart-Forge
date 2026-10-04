@@ -50,3 +50,20 @@ def test_rare_invalid_lanes_are_discarded_without_clipping_and_excess_is_rejecte
     assert diagnostics['discarded_invalid_lane_notes'] == 1
     path.write_text(header + valid + '576,192,0,1,0,0:0:0:0:\n' * 10)
     with pytest.raises(ValueError): read_osu(path, discard_invalid_lanes=True)
+
+
+def test_bad_primary_does_not_discard_valid_retry_and_sibling(tmp_path):
+    from malody_studio.mapperatorinator import read_worker_charts
+    header = '[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,2,1,100,1,0\n[HitObjects]\n'
+    bad = tmp_path/'bad.osu'; good = tmp_path/'good.osu'; empty = tmp_path/'empty.osu'
+    bad.write_text(header+'832,192,100,1,0,0:0:0:0:\n')
+    good.write_text(header+'192,192,200,1,0,0:0:0:0:\n')
+    empty.write_text(header)
+    result={'charts':{'hard':str(bad),'hard__retry':str(good),'expert':str(empty)}}
+    charts,meta=read_worker_charts(result)
+    assert set(charts)=={'hard__retry','expert'}
+    assert charts['hard__retry'][0]==[Note(200,1)] and charts['expert'][0]==[]
+    assert 'hard' in meta['rejected_charts'] and len(meta['chart_diagnostics'])==3
+    assert '832' in bad.read_text()  # Original model output remains unchanged.
+    with pytest.raises(ValueError,match='所有输出'):
+        read_worker_charts({'charts':{'hard':str(bad)}})

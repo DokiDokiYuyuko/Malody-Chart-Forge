@@ -1,8 +1,10 @@
 """Isolated V32 process and strict osu!mania-to-classic-Malody conversion."""
 import bisect
 import json
+import hashlib
 import math
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -68,6 +70,23 @@ def read_osu(path, discard_invalid_lanes=False, diagnostics=None):
             raise ValueError('音符轨道坐标超出范围')
     return parse_osu_objects(objects), sorted(timing.items()), inherited
 
+def read_worker_charts(result):
+    """Isolate malformed model attempts; valid retries and sibling outputs survive."""
+    charts, rejected, diagnostics = {}, {}, {}
+    for key, path in result['charts'].items():
+        detail = {}
+        try:
+            charts[key] = read_osu(path, discard_invalid_lanes=True, diagnostics=detail)
+        except (ValueError, IndexError, OverflowError) as exc:
+            rejected[key] = str(exc)
+        diagnostics[key] = detail
+    result['chart_diagnostics'] = diagnostics
+    result['rejected_charts'] = rejected
+    if not charts:
+        raise ValueError('V32 所有输出均未通过结构检查：' + json.dumps(rejected, ensure_ascii=False))
+    return charts, result
+
+
 def serialize_with_timing(notes, title, artist, version, timing):
     # Convert absolute milliseconds through every red timing point, including holds.
     active = next((bpm for timestamp, bpm in reversed(timing) if timestamp <= 0), timing[0][1])
@@ -91,7 +110,7 @@ def serialize_with_timing(notes, title, artist, version, timing):
 
 def build_worker_request(source, destination, options):
     difficulty = options.get('v32_difficulty', 8)
-    return {'audio': str(source), 'output': str(destination), 'title': options['title'],
+    request = {'audio': str(source), 'output': str(destination), 'title': options['title'],
             'artist': options['artist'], 'seed': options['seed'], 'ln_ratio': options['ln_ratio'],
             'difficulty': difficulty, 'temperature': options.get('v32_temperature', .9),
             'top_p': options.get('v32_top_p', .9),
@@ -100,6 +119,10 @@ def build_worker_request(source, destination, options):
             'descriptors': options.get('v32_descriptors', []),
             'negative_descriptors': options.get('v32_negative_descriptors', []),
             'presets': [dict(label='共享母谱', sr=difficulty, key='master')]}
+    for field in ('start_time', 'end_time', 'timing_reference'):
+        if field in options: request[field] = options[field]
+    if options.get('_advanced_presets'): request['presets'] = options['_advanced_presets']
+    return request
 
 def generate(source, directory, options, progress):
     if not ready():
@@ -110,31 +133,16 @@ def generate(source, directory, options, progress):
     request = build_worker_request(source, destination, options)
     request_path = destination / 'request.json'
     request_path.write_text(json.dumps(request, ensure_ascii=False), encoding='utf-8')
-    environment = os.environ.copy()
-    environment.update(PYTHONUTF8='1', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
-                       HF_HOME=str(ROOT / 'cache' / 'huggingface'), WANDB_MODE='disabled',
-                       TEMP=str(ROOT / 'cache'), TMP=str(ROOT / 'cache'))
-    log_path = ROOT / 'logs' / (Path(directory).name + '-v32.log')
-    started, previous = time.monotonic(), None
-    with log_path.open('w', encoding='utf-8') as log:
-        with subprocess.Popen([str(PYTHON), '-u', str(ROOT / 'tools' / 'mapperatorinator_worker.py'), str(request_path)],
-                              cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT,
-                              creationflags=subprocess.CREATE_NO_WINDOW) as process:
-            while process.poll() is None:
-                status_path = destination / 'worker-status.json'
-                if status_path.exists():
-                    state = json.loads(status_path.read_text(encoding='utf-8'))
-                    if state != previous:
-                        progress(state['message'], state['percent'])
-                        previous = state
-                if time.monotonic() - started > 3600:
-                    process.kill()
-                    raise RuntimeError('V32 生成超过一小时，请查看日志或缩短音乐')
-                time.sleep(1)
-            if process.returncode:
-                tail = log_path.read_text(encoding='utf-8')[-1600:]
-                raise RuntimeError('V32 生成失败，日志：' + str(log_path) + '\n' + tail)
-    result = json.loads((destination / 'worker-result.json').read_text(encoding='utf-8'))
+    from .resident import call
+    if os.environ.get('STARTRAIL_RESIDENT_DISABLED')=='1':
+        env=os.environ.copy();env.update(PYTHONUTF8='1',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
+        with (destination/'standalone.log').open('w',encoding='utf-8') as log:
+            subprocess.run([str(PYTHON),'-u',str(ROOT/'tools/mapperatorinator_worker.py'),str(request_path)],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),timeout=3600,check=True)
+        result=json.loads((destination/'worker-result.json').read_text(encoding='utf-8'))
+    else:
+        result=call('v32',{'request_path':str(request_path.resolve())},progress)
+    if options.get('_advanced_presets'):
+        return read_worker_charts(result)
     master = read_osu(result['charts']['master'], discard_invalid_lanes=True, diagnostics=result)
     result['difficulty_policy'] = '共享母谱，音频起音辅助分层；非独立模型难度输出'
     return {key: master for key in keys}, result

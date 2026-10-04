@@ -1,0 +1,13 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
+# Inference-only environment. The application and Demucs keep their own runtimes.
+torch==2.5.1+cu124
+numpy==1.26.4
+scipy==1.13.1
+librosa==0.10.2.post1
+soundfile==0.13.1
+einops==0.8.0
+rotary-embedding-torch==0.8.6
+beartype==0.18.5
+packaging==24.2
+PyYAML==6.0.2
+setuptools==70.3.0

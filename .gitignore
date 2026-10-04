@@ -19,12 +19,29 @@ logs/
 # Large model weights: fetch separately using the README instructions
 models/**/*.ckpt
 models/**/*.safetensors
+models/**/*.th
+runtime/separation-venv/
+runtime/roformer-venv/
+runtime/python/
 
 # Local settings and editor files
 .env
+/private/
 .env.*
 !.env.example
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Original third-party sound archives (selected licensed samples are in web/assets)
+/data/asset-sources/
+
+# Local GPU residency measurements and music-derived verification artifacts
+/work/resident-benchmark/
+/work/test_resident_real.py
+/work/test_resident_mug.py
+
+# Local diagnostic workspace and machine-specific separation installation records
+/work/
+/models/separation/**/manifest.json

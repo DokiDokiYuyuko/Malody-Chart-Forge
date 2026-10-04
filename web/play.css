@@ -1,0 +1,100 @@
+/* Multi-pattern controls and in-place keyboard play. Loaded after all themes. */
+#pattern-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+#pattern-options label{display:grid;grid-template-columns:16px minmax(0,1fr);gap:4px 9px;align-items:center;min-height:58px;padding:10px 9px;border:1px solid var(--theme-line);border-radius:4px;background:var(--stat-surface);color:var(--theme-text);overflow:visible}
+#pattern-options input{grid-column:1;grid-row:1/3;width:15px;height:15px;margin:0;accent-color:var(--theme-accent)}
+#pattern-options strong{font-family:var(--display);font-size:12px;line-height:1.25;font-style:italic;color:var(--theme-text);white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+#pattern-options small{grid-column:2;font-size:11px;line-height:1.3;color:var(--theme-muted);white-space:normal;overflow:visible}
+#pattern-options label:has(input:checked){border-color:var(--theme-accent);background:var(--settings-surface);box-shadow:inset 3px 0 var(--theme-accent)}
+#combination-summary{margin:10px 0 0;padding:9px 10px;border-left:2px solid var(--theme-accent);background:var(--filters-surface);color:var(--theme-text);font-size:11px;line-height:1.7}
+#pattern-tabs{gap:6px;flex-wrap:wrap}
+#pattern-tabs button{min-height:30px;padding:6px 11px;border:1px solid var(--theme-line)!important;border-radius:3px;background:var(--stat-surface)!important;color:var(--theme-text)!important;font-size:11px;line-height:1.25;box-shadow:none;clip-path:none;transform:none}
+#pattern-tabs button[aria-pressed="true"],#pattern-tabs button.active{background:#193d50!important;color:#e7fcff!important;border-color:#40869a!important;box-shadow:inset 0 -2px #71ced6}
+#pattern-tabs button::before,#pattern-tabs button::after{display:none}
+.playfield{position:relative}
+.playfield.arcade-active{cursor:default}
+.playfield.arcade-active>#chart-canvas,.playfield.arcade-active>#preview-empty,.playfield.arcade-active>.lane-labels,.playfield.arcade-active>#preview-toggle{visibility:hidden;pointer-events:none}
+#arcade-panel{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;background:#091c29;color:#d6edf3;outline:none;overflow:hidden;font-family:var(--display)}
+#arcade-panel[hidden],#arcade-panel [hidden]{display:none!important}
+.arcade-inline-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;min-height:46px;padding:7px 12px;border-bottom:1px solid #315368;background:#102a3a}
+.arcade-inline-toolbar>strong{font-size:12px;font-style:italic;white-space:nowrap}
+.arcade-inline-toolbar>strong small{margin-left:9px;font-style:normal;letter-spacing:2px;font-size:10px;color:#77bbc7}
+.arcade-inline-actions{display:flex;align-items:center;gap:6px}
+.arcade-inline-actions button{min-height:30px;padding:6px 10px;border:1px solid #3e6578;border-radius:3px;background:#19394b;color:#d9f4fa;font-family:inherit;font-size:11px;cursor:pointer}
+.arcade-inline-actions button:hover{background:#28536a;border-color:#87c8d6}
+.arcade-inline-actions #arcade-exit{background:transparent;color:#a9cbd8;border-color:#3a5867}
+.arcade-inline-actions kbd{margin-left:5px;font-family:inherit;font-size:9px;opacity:.7}
+#arcade-panel .arcade-stage{flex:1;min-height:0;height:auto;border:0;border-radius:0}
+#arcade-panel .arcade-overlay{pointer-events:none;backdrop-filter:none;background:#091c2933}
+#arcade-panel .arcade-overlay strong{font-size:clamp(46px,6vw,84px);font-style:italic;color:#dbfaff;text-shadow:0 0 32px #62dcdb44}
+#arcade-panel .arcade-overlay p{max-width:85%;font-size:12px;line-height:1.8;white-space:pre-line}
+#arcade-panel .arcade-overlay[data-state="results"]{padding:10px;gap:6px;overflow:auto;pointer-events:auto;background:#091c29d9}
+#arcade-panel .arcade-overlay[data-state="results"] strong{font-size:clamp(24px,2.4vw,38px)}
+#arcade-panel .arcade-overlay[data-state="results"] p{line-height:1.45;margin:0}
+#arcade-panel .arcade-result-actions button{min-height:32px;padding:6px 10px;color:#e6f5f8;background:#173a4b;font-size:12px;pointer-events:auto}
+#arcade-panel .arcade-result-actions .arcade-result-retry{color:#efffff;background:#176169;border-color:#6acbd0}
+#arcade-panel .arcade-result-counts{margin:0}
+#arcade-panel .arcade-combo{top:12px;right:18px}
+.arcade-inline-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;flex-shrink:0;padding:6px 12px;border-top:1px solid #2c4b5e;background:#102736}
+#arcade-panel .arcade-score{display:flex;flex-wrap:wrap;gap:13px;margin:0}
+#arcade-panel .arcade-score-cell{display:flex;gap:5px;padding:0;border:0;background:none}
+#arcade-panel .arcade-score-cell strong{color:#ddf0f7;font-size:12px}
+#arcade-panel .arcade-score-cell small{color:#85a9bd;font-size:10px}
+#arcade-panel .arcade-score-cell[data-judge="perfect"] small{color:#f2d68a}
+#arcade-panel .arcade-score-cell[data-judge="great"] small{color:#9bcaff}
+#arcade-panel .arcade-score-cell[data-judge="good"] small{color:#92d7a2}
+#arcade-panel .arcade-score-cell[data-judge="miss"] small{color:#ed9cb5}
+.arcade-calibration{position:relative;color:#a4c5d5;font-size:10px;white-space:nowrap}
+.arcade-calibration>summary{padding:4px;cursor:pointer}
+.arcade-calibration[open]{position:absolute;right:12px;bottom:44px;width:min(290px,calc(100% - 24px));padding:12px;border:1px solid #447086;border-radius:4px;background:#153141;box-shadow:0 8px 24px #0005;white-space:normal;z-index:8}
+.arcade-calibration label{display:flex;justify-content:space-between;margin:12px 0 7px}
+.arcade-calibration input{width:100%}
+.arcade-calibration small{display:block;margin-top:8px;line-height:1.7;color:#8fb1c1;font-size:10px}
+@media(max-width:620px){.arcade-inline-toolbar{padding:6px 8px}.arcade-inline-toolbar>strong small{display:none}.arcade-inline-actions button{padding:6px 8px}.arcade-inline-footer{padding:6px 8px;gap:6px}#arcade-panel .arcade-score{gap:7px}.arcade-inline-actions kbd{display:none}}
+
+#arcade-panel .arcade-overlay strong{font-size:clamp(24px,3vw,36px)}
+#arcade-panel .arcade-overlay[data-countdown="true"] strong{font-size:clamp(52px,6vw,84px)}
+#arcade-panel .arcade-overlay:not([hidden])~.arcade-judge{visibility:hidden}
+
+/* A small, readable hit response in the centre; it never intercepts input. */
+.arcade-feedback{position:absolute;left:50%;top:43%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:5px;min-width:130px;pointer-events:none;text-align:center}
+#arcade-panel #arcade-judge{position:static;transform:none;min-height:35px;font-size:32px;line-height:1.05;letter-spacing:.2px;text-shadow:0 1px 2px #071421,0 0 12px #e8ce7133}
+#arcade-panel #arcade-combo{position:static;transform:none;display:flex;flex-direction:column;align-items:center;gap:2px;color:#e4f3fb;font-size:24px;line-height:1.1;font-weight:750;text-shadow:0 1px 2px #071421;opacity:.94}
+#arcade-panel #arcade-combo-number{display:block;font-variant-numeric:tabular-nums;transform-origin:center}
+#arcade-panel #arcade-combo small{font-size:8px;font-style:normal;line-height:1;letter-spacing:1.6px;color:#92b6c8;text-align:center}
+#arcade-panel .arcade-overlay:not([hidden])~.arcade-feedback{visibility:hidden}
+.arcade-max-combo{font-size:10px;font-variant-numeric:tabular-nums;color:#8eb7c9;white-space:nowrap}
+.keysound-heading,.keysound-volume-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.keysound-heading label{display:flex;align-items:center;gap:8px;color:var(--theme-muted);font-size:12px}
+.keysound-heading input{width:16px;height:16px;accent-color:var(--theme-accent)}
+.keysound-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:12px 0}
+.keysound-picker select,.keysound-picker button{min-height:38px;padding:7px 12px;border:1px solid var(--theme-line);border-radius:4px;background:var(--stat-surface);color:var(--theme-text);font-size:13px}
+.keysound-picker button{background:var(--settings-surface);font-weight:650;cursor:pointer}
+.keysound-volume-heading{margin-bottom:6px;color:var(--theme-text);font-size:12px}
+.keysound-volume-heading output{color:var(--theme-accent);font-variant-numeric:tabular-nums}
+#keysound-volume{width:100%}
+.keysound-settings>small{display:block;margin-top:6px;color:var(--theme-muted);font-size:11px;line-height:1.7}
+#keysound-status{margin:5px 0;color:#b96b70;font-size:11px;line-height:1.5}
+#keysound-status:empty{display:none}
+@media(max-width:620px){#arcade-panel #arcade-judge{font-size:26px;min-height:28px}#arcade-panel #arcade-combo{font-size:20px}.arcade-max-combo{display:none}}
+@media(prefers-reduced-motion:reduce){.arcade-feedback *{animation:none!important}}
+
+/* Keep the three result actions together when the statistics panel gets narrow. */
+.result-header{flex-wrap:wrap;row-gap:8px}
+.result-actions{gap:6px}
+/* A companion action, with the same silhouette and a violet lane accent. */
+.result-header .autoplay-launch{border-color:#665180;background:#3d2c59;box-shadow:inset 0 -2px #c2a2e6;color:#faf4ff}
+.result-header .autoplay-launch::before{border-left-color:#d7baff}
+.result-header .autoplay-launch:hover{background:#513a74}
+.result-header .autoplay-launch:focus-visible{outline:2px solid #b999dd;outline-offset:2px}
+#arcade-panel[data-mode="autoplay"] .arcade-inline-toolbar>strong{color:#ddc9fb}
+#arcade-panel[data-mode="autoplay"] .arcade-inline-toolbar>strong small{color:#bfa2d9;letter-spacing:.5px}
+#arcade-panel[data-mode="autoplay"] .arcade-inline-toolbar{border-bottom-color:#665181}
+/* Keep the result title reachable in a compact advanced playfield. */
+#arcade-panel .arcade-overlay:not([data-countdown="true"]){justify-content:safe center}
+@media(min-width:1181px) and (max-height:850px){
+ .adv-workflow #arcade-panel .arcade-overlay[data-state="results"]{padding:6px;gap:4px}
+ .adv-workflow #arcade-panel .arcade-overlay[data-state="results"] strong{font-size:22px;line-height:1.2}
+ .adv-workflow #arcade-panel .arcade-overlay[data-state="results"] p{display:none}
+ .adv-workflow #arcade-panel .arcade-result-counts span{padding:4px 6px}
+ .adv-workflow #arcade-panel .arcade-result-actions{margin:0}
+}

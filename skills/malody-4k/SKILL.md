@@ -5,9 +5,11 @@ description: 将用户提供的音乐用本机 MuG Diffusion 或 Mapperatorinato
 
 使用 `the project root` 中已部署的服务，全部数据保存在该目录。六档为 easy、medium、hard、expert、master、lunatic，活动片段密度目标约 2.5 / 5 / 8.5 / 13 / 18.5 / 26 NPS。默认选前三档，长条目标 15%。旧参数 normal 映射 medium，勿同时传入两者。
 
-服务地址 `http://127.0.0.1:8765`。先检查 `/api/health`，需要启动时运行项目 `start.ps1`。不要同时启动第二个服务占用显存。
+服务地址以当前启动配置为准，本机工作台通常为 `http://127.0.0.1:8766`，旧启动默认也可能为 8765。先检查 `/api/health` 和当前队列，需要启动时运行项目 `start.ps1`。不要另外启动模型服务占用显存。
 
-网页默认 V32，API 与 CLI 为兼容旧调用默认 MuG；明确传 `engine=v32` 或 `--engine v32` 可选 V32。先检查 health.engines 中对应引擎是否就绪。两种引擎均提供一份母谱，再通过音频起音辅助分成六档，不要称为六份独立模型生成结果。V32 自动生成分段 BPM，不使用 MuG 步数或手填 BPM；原始 `.osu` 位于任务目录 `v32-original`，失败日志为 `logs/<任务编号>-v32.log`。权重位于 `models`，登记见 `models/README.md`。
+网页默认 V32，API 与 CLI 为兼容旧调用默认 MuG；明确传 `engine=v32` 或 `--engine v32` 可选 V32。先检查 health.engines 中对应引擎是否就绪。普通台使用母谱分层；高级台默认逐档独立生成，不能把普通台的分层结果描述成六份独立推理。新网页任务默认段落适配；旧参数快照缺少 dynamic_enabled 时仍走旧策略。权重位于 `models`，登记见 `models/README.md`。
+
+高级项目保留原曲采样时钟、片段、不可变版本与手动选版。可启用人声/伴奏联合制谱：分离缓存、两份声部原谱及融合均保存在本机，融合只消费一次共享预算，导出使用原曲。不要把模型产生的 BPM 当作已验证音频 BPM。具体操作见 `docs/advanced-authoring-guide.md`、`docs/adaptive-sections.md`、`docs/stem-generation.md`。高级父任务独占生成资源，不额外排子任务导致阻塞。
 
 用户要求从网络选曲时，可通过 `/api/music/search?q=<曲名或YouTube单曲链接>` 搜索，核对音乐人、曲名和版本，再 POST `/api/music/<id>/import`。GET 同路径读取下载状态，直到 ready 后 POST `/api/music/<id>/generate`，表单参数与上传接口一致。GET `/api/music` 可复用已下载的本地音乐。来源需要登录、限制访问或下载失败时显示原因，不使用账号 Cookie 或绕过限制。仅有相似曲名不足以认定是目标版本。
 

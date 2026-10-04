@@ -1,6 +1,6 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {normalizeAppearance,createMeteorSystem} = require('../web/appearance.js');
+const {normalizeAppearance,createTrailSystem} = require('../web/appearance.js');
 
 test('appearance handles missing and corrupt saved preferences without enabling unexpected themes',()=>{
   for (const value of [null,undefined,[],42,'invalid',{theme:'unknown',trail:'false'}]) {
@@ -12,25 +12,17 @@ test('reduced-motion users start with the effect disabled, preserving explicit p
   assert.equal(normalizeAppearance(null,true).trail,false);
   assert.deepEqual(normalizeAppearance({theme:'dark',trail:true},true),{theme:'dark',trail:true});
 });
-test('continuous mouse movement cannot grow the effect without bound',()=>{
-  const system = createMeteorSystem(()=>.5);
-  for (let i=0;i<2000;i++) system.emit(i,100,20,-5);
-  assert.equal(system.particles.length,64);
-  assert.equal(system.particles.at(-1).x,1999);
+test('fast movement samples a continuous seven-color path instead of sparse particles',()=>{
+  const system=createTrailSystem();system.add(0,0,0);system.add(200,0,16);
+  assert.equal(system.points.length,51);assert.ok(system.points.every((p,i)=>!i||p.x-system.points[i-1].x<=4));
+  assert.ok(new Set(system.points.map(p=>Math.floor(p.hue/40))).size>=6);
 });
-test('all meteors expire after motion stops and clear releases the remaining particles',()=>{
-  const system = createMeteorSystem(()=>.5);
-  system.emit(5,10,0,0);
-  system.step(16);
-  assert.ok(system.particles.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
-  for (let i=0;i<60;i++) system.step(16);
-  assert.equal(system.particles.length,0);
-  system.emit(5,10,3,4); system.clear();
-  assert.equal(system.particles.length,0);
+test('the rainbow cache is bounded and all samples expire after movement stops',()=>{
+  const s=createTrailSystem();for(let i=0;i<2000;i++)s.add(i,100,i/10);
+  assert.equal(s.points.length,256);s.live(800);assert.equal(s.points.length,0);
+  s.add(1,1,900);s.clear();assert.equal(s.points.length,0);
 });
-test('a long suspension does not fling particles across the screen',()=>{
-  const system = createMeteorSystem(()=>.5);
-  system.emit(100,100,1,1); system.step(100000);
-  assert.equal(system.particles[0].age,48);
-  assert.ok(Math.abs(system.particles[0].x-100)<5);
+test('a discontinuity, excluded region or long suspension never draws a stale line',()=>{
+  const s=createTrailSystem();s.add(0,0,0);s.add(20,0,20);s.resetPointer();s.add(100,0,30);assert.equal(s.points.at(-1).break,true);
+  s.add(200,0,1000);assert.equal(s.points.at(-1).break,true);s.add(1000,0,1010);assert.notEqual(s.points.at(-1).break,true,'a fast wide movement still gets a continuous trail');
 });

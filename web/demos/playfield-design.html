@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>星轨 · 判定区与皮肤设计 Demo</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/demos/playfield-design.css?v=7"></head>
+<body><canvas id="trail" aria-hidden="true"></canvas><main>
+<header><a href="/">星轨谱面工坊</a><span>视觉方案 Demo</span><label class="trail-switch"><input id="trail-enabled" type="checkbox" checked>七彩流星拖尾</label></header>
+<section class="intro"><div><p class="kicker">四轨，同一条节奏</p><h1>让每一次击键，都有落点。</h1><p>试按 D F J K，或点击轨道底部。长按能看到持续亮起，松开后自然收束。</p></div><div class="palette"><i></i><i></i><i></i><i></i><span>四轨配色保持独立</span></div></section>
+<div class="design-layout"><section class="live-panel" aria-label="皮肤交互演示"><div class="stage-toolbar"><strong id="skin-title">悬浮光片</strong><span>视觉演示 · 不计算实际游戏成绩</span><button id="pause" type="button" aria-pressed="false">暂停下落</button></div>
+<div id="stage"><canvas id="field" aria-label="四轨皮肤与击键反馈"></canvas><div class="feedback" aria-live="polite"><strong id="judge"></strong><span id="combo">0</span><small>COMBO</small></div></div>
+<div class="speed-deck"><div class="speed-caption"><label for="speed">下落流速 <small>画面速度</small></label><output id="speed-value">6.0<span>×</span></output></div><div class="speed-rail"><input id="speed" type="range" min="1" max="16" step="0.1" value="6" aria-label="下落流速，1 至 16 倍"><div class="speed-marks"><span>1×</span><span>4×</span><span>8×</span><span>12×</span><span>16×</span></div></div><div class="speed-presets" aria-label="常用流速"><button data-speed="4">4×</button><button data-speed="8">8×</button><button data-speed="12">12×</button><button data-speed="16">16×</button></div></div>
+</section><aside>
+<section class="choice-section"><h2>皮肤套装</h2><p>同时切换音符、长条和底部判定区。</p><div class="skin-choices" role="group" aria-label="皮肤套装">
+<button data-skin="float" aria-pressed="true"><span class="sample float"><i></i><i></i><i></i><i></i></span><strong>悬浮光片</strong><small>轻薄透明 · 精细光边</small><em>推荐</em></button>
+<button data-skin="mechanical" aria-pressed="false"><span class="sample mechanical"><i></i><i></i><i></i><i></i></span><strong>精密机械</strong><small>薄型切角 · 精细刻线</small></button>
+<button data-skin="minimal" aria-pressed="false"><span class="sample minimal"><i></i><i></i><i></i><i></i></span><strong>极简光轨</strong><small>纯色短条 · 清楚落点</small></button></div></section>
+<section class="choice-section dock-choice"><h2>击键特效</h2><p>底部判定位置保持一致。</p><div role="group" aria-label="击键特效"><button data-effect="off">关闭</button><button data-effect="light">轻量</button><button data-effect="standard" aria-pressed="true">标准</button></div></section>
+<section class="effect-notes"><h2>克制的击键反馈</h2><p><b>按下</b> · 按键轻压，判定线短闪。</p><p><b>命中</b> · 窄光柱与一圈扩散光纹。</p><p><b>长按</b> · 稳定亮起，释放后淡出。</p><small>这里的每次按键模拟一次成功命中，用于比较视觉效果。正式试玩由真实游戏判定事件触发。</small></section>
+</aside></div><footer>Demo 不更改正式工作台设置或谱面数据。移动鼠标可比较连续七彩拖尾；进入轨道和调节流速时停止发射。</footer>
+</main><script src="/static/playfield-renderer.js?v=20261003-playfield-v7"></script><script src="/static/demos/playfield-design.js?v=7"></script></body></html>

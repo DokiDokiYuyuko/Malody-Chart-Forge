@@ -11,7 +11,7 @@
     <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-5679d8?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 and 11">
     <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/stargazers"><img src="https://img.shields.io/github/stars/DokiDokiYuyuko/Malody-Chart-Forge?style=for-the-badge&color=e999bf" alt="GitHub stars"></a>
   </p>
-  <p><a href="#简体中文">简体中文</a>　·　<a href="#english">English</a>　·　<a href="#一键配置推荐">快速开始</a></p>
+  <p><a href="#简体中文">简体中文</a>　·　<a href="#english">English</a>　·　<a href="#一键配置推荐">快速开始</a>　·　<a href="CHANGELOG.md">开发者日志 / Changelog</a></p>
 </div>
 
 <p align="center"><img src="docs/screenshots/readme-night.jpg" alt="Startrail four-lane chart preview in the mint-night theme" width="100%"></p>
@@ -38,12 +38,39 @@ Startrail 是为旧版 Malody 4K 与手机四指游玩设计的本地制谱工�
 ## 功能
 
 - 本地运行 MuG Diffusion 或 Mapperatorinator V32，为音乐生成 4K 谱面。
+- **高级制谱：** 波形划段、逐档独立生成、片段候选版本、同步 A/B、拼接预览与 MCZ 导出；[使用指南（中英文）](docs/advanced-authoring-guide.md)。
+- **同步听音：** 滚动频谱与四轨共用播放时钟；试听与试玩互斥，Esc 暂停 / 继续，内嵌结算与重试。
+- **声部与段落：** Demucs 快速分离与 Kim Mel-Band RoFormer 高质量档；先局部试分离，同位置 A/B 循环比较，再选择完整人声 / 伴奏制谱并联合排键。按节奏活动与可信 BPM 调整段落条件，保留原谱与候选版本。[分离使用与安装](docs/separation-upgrade-guide.md) · [本机音频与 GPU 对照](docs/separation-upgrade-validation.md) · [动态难度](docs/adaptive-sections.md)。
+- **Agent 修谱：** 用户配置修谱 / 听音 API，通过本地音频与时序工具提出可验证修改，比较后手动应用；[需求与实现约定](docs/advanced-authoring-and-agent-requirements.md)。
 - Easy、Medium、Hard、Expert、Master、Lunatic 六档；逐档调整目标平均 NPS、滚动一秒峰值、同刻按键数、同轨间隔和长条上限。
 - 手机四指规则检查、音符预览、音乐播放、统计报告，以及包含音轨和背景图的 `.mcz` 打包。
 - 可上传本地音乐；也可搜索 YouTube 公开音源并下载到本机后制谱。在线搜索需要网络；本地推理不上传音频。
+- 高级台的云端 Agent 独立于本地推理；仅在用户开启评审时向配置的服务发送当前窗口证据，听音片段可单独开关。API 密钥可用 Windows 用户加密保存。
 - 晴空、蜜桃、月雾、海盐、薄荷夜航五套主题；可关闭的鼠标流星；适配不同屏幕的工作台和曲包页面。
 - 模型权重、音频、缓存、报告和曲包保存在项目目录。模型权重需单独下载，本仓库不分发权重或用户音乐。
 - 从 YouTube 链接导入到 `.mcz` 输出的完整流程见下方[双语流程图](#workflow)。
+
+### 高级制谱 / Advanced authoring
+
+<p align="center"><img src="docs/screenshots/workbench-timeline.jpg" alt="Advanced authoring: full-song timeline, BPM markers, focused workflow steps and chart candidates" width="100%"></p>
+
+完整音乐导入即可开始，四个模式围绕常驻时间轴工作：准备音乐 → 划段 → 生成 → 选谱与导出。节奏建议先预览，再一次应用为真实片段；多选片段批量生成，两路输入默认产出合并候选。试听音轨与模型输入分别选择，A/B 保持音乐位置。手动采用后预览成品并导出；规则与 Agent 保留旧版，云端评审使用自己的 API。
+
+Start from complete audio and an empty chart. Prepare, segment, generate and select/export share a persistent music timeline. Preview analysis suggestions before atomically creating real segments, then batch-generate selected combinations. Dual-stem generation produces a merged candidate. Audition and model inputs remain separate; A/B keeps one clock. Adopt explicitly, preview the edit and export. Rules and Agent revisions preserve older versions; cloud review uses your own API.
+
+[中英文操作指南 / User guide](docs/advanced-authoring-guide.md) · [时间、版本与 Agent 约定 / Specification](docs/advanced-authoring-and-agent-requirements.md) · [审谱 Skill / Review skill](skills/malody-chart-review/SKILL.md)
+
+[频谱、分轨、动态段落与实际验收 / Spectrum, stems, adaptive sections and validation](docs/workflow-enhancement-validation.md)
+
+### 人声与伴奏分离 / Vocal separation
+
+<p align="center"><img src="docs/screenshots/separation-lab-desktop.jpg" alt="Separation lab: local model selection, range trial and aligned A/B audition" width="100%"></p>
+
+先试一段、听清差别，再处理整曲。Kim 质量档在本机 4080 SUPER 上完成两首全曲的 2 / 4 次覆盖测试，4 次覆盖端到端约 29 / 44 秒；进程峰值预留显存约 2.04 GiB。分离结果同帧数、同采样时钟，局部预览不冒充整曲输入。六个重点窗口的声音对照与十组同种子制谱记录均保留；听感与采音分别比较后手动采用。
+
+Try a range before separating the whole song. Kim's high-quality preset completed two full-song, 2× / 4× coverage comparisons on the local RTX 4080 SUPER; 4× coverage took about 29 / 44 seconds end to end with 2.04 GiB peak reserved process memory. Aligned A/B uses one player and optional attenuation-only volume matching. Existing audio and selected charts stay intact; local trial clips remain preview-only.
+
+[操作与独立环境安装 / Usage and setup](docs/separation-upgrade-guide.md) · [六个窗口、实际采音与硬件记录 / Measured validation](docs/separation-upgrade-validation.md)
 
 ## 配置要求与实测表现
 
@@ -200,6 +227,31 @@ Invoke-WebRequest `
 
 网页使用「**星轨谱面工坊 · Startrail**」作为界面名称。点击顶部「我的曲包」右侧的「设置」，可切换晴空、蜜桃、月雾、海盐与薄荷夜航五款主题，并开启或关闭鼠标流星拖尾。曲包与歌曲封面按 16:9 显示，完整保留原图。设置会保存在当前浏览器；系统启用减少动态效果时，拖尾自动停用。
 
+### 搜索、多曲队列与谱面迭代
+
+YouTube 搜索每页显示最多 20 条公开单曲结果，可按时长筛选并继续加载；结果会按视频 ID 去重，并显示频道、时长和来源链接。搜索结果支持多选，一批最多 20 首；提交时会把当前引擎、难度和参数作为同一份设置快照。队列按先进先出顺序运行，失败任务不会阻塞后续歌曲；可取消尚未开始的任务，手动重试会排到队尾。首版不强制中断正在运行的 GPU 推理。
+
+在线导入会请求 yt-dlp 当前可用的最佳纯音频流，不再优先选可能较低码率的 M4A。YouTube 音频仍是平台提供的有损编码；曲包为旧版 Malody 兼容性会另转为 OGG Vorbis。项目不会自动对音乐降噪，因为通用降噪可能抹掉鼓点、齿音和轻音起音；要处理疑似底噪，应保留原曲音轨，并先对“仅供谱面分析”的降噪结果做试听和谱面 A/B 对比。
+
+服务重启后，原等待任务会暂停，需在「生成队列」点「继续暂停的任务」；当时正在生成的任务标记为中断，可重新尝试。无法从旧记录恢复来源的任务会提示重新导入音乐。默认始终串行运行。只有本机完整通过 MuG 与 V32 的短、中、长音频生成、三种双任务组合、MCZ 检查及至少 2 GiB 空闲显存门槛后，设置页才允许选择最多 2 路并行；其他设备继续串行。
+
+生成报告会标出局部密度偏高、疑似静音段出现音符和短于 1/24 拍的细分音符。点击告警可切换到对应难度并跳至相关时间。这些是供人工复核的启发式提示，不自动改谱，也不代表官方等级。轨道重叠等结构错误会阻止导出，并保留冲突轨道和时间供预览定位。
+
+在生成结果中可以选择单个难度重新生成。工具复用本地任务目录中的共享候选音符、时间轴与设置记录，不重复运行整首歌的模型；每个版本的 `.mc`、统计和完整 `.mcz` 均会保留，可查看版本数据并恢复旧版。历史任务若没有生成缓存，需要先重新生成整曲才能启用单档迭代。
+
+### 本机硬件基准与并行资格
+
+基准脚本会为 MuG、V32 各执行短/中/长完整生成，再按需执行 MuG+MuG、MuG+V32 和 V32+V32 双任务压力测试。准备三段本地且有权使用的音频（短 5–60 秒、中 60–180 秒、长 180–600 秒），使用项目环境运行：
+
+```powershell
+.\.venv\Scripts\python.exe tools\hardware_benchmark.py `
+  --short "D:\Music\short.wav" `
+  --medium "D:\Music\medium.wav" `
+  --long "D:\Music\long.wav"
+```
+
+测试会耗用显卡并为每种组合生成六档 MCZ；建议关闭其他 GPU 密集程序后运行。报告写入 `benchmarks/<时间戳>/benchmark.json`，最新资格摘要写入 `benchmarks/latest.json`。并行只在当前 GPU 与驱动匹配、全部单任务和双任务组合成功、曲包校验通过且压力测试期间至少保留 2 GiB 显存时解锁。只想先测单任务可加 `--skip-parallel`；这不会开放并行。该基准是设备本机实测，不用于推断其他显卡的最低配置。
+
 ## 难度和模型设置
 
 顶部六档是**最终谱面**的目标。卡片数字是目标平均 NPS；“按难度细调谱面规则”还能修改每档滚动一秒峰值、同刻上限、同轨间隔和长条上限。起音不足时会降低实测密度并提示，不会只为凑目标在音乐空白处加音符。
@@ -284,6 +336,8 @@ Startrail 是社区独立项目，与 Malody、模型作者、音乐发行方均
 ## English
 
 **Startrail · Malody Chart Forge** turns a song into a four-lane rhythm chart for classic Malody 4K. Generate locally, shape six difficulty tiers, review the timing in the browser, and export an `.mcz` package.
+
+The **Advanced authoring** desk adds sample-accurate segments, independent per-tier model generation, immutable candidates, synchronized A/B previews, and compact audio/chart assembly. The optional **Agent review** uses your own repair/listening API, local evidence tools, and explicit user-applied patches. See the [bilingual guide](docs/advanced-authoring-guide.md) and [requirements](docs/advanced-authoring-and-agent-requirements.md).
 
 > This is an independent community project and is not affiliated with Malody. Generated charts should retain their AI disclosure. Their displayed difficulty is an estimate, not an official rating or a guarantee of playability.
 
@@ -416,6 +470,8 @@ Invoke-WebRequest `
 
 The app does not read browser cookies or bypass sign-in, paid access, or DRM. Only download music you are authorized to use.
 
+Online imports request yt-dlp's best available audio-only stream instead of preferring M4A by extension. YouTube still provides a lossy stream, and packages are transcoded to OGG Vorbis for classic Malody compatibility. Automatic denoising is intentionally avoided: general-purpose filters can remove drum transients, consonants, and quiet note attacks. Any denoising experiment should affect chart analysis only, preserve the original package audio, and be compared by listening and chart A/B review.
+
 ### Start and generate a chart
 
 After installing at least one engine, double-click `启动制谱台.bat` or run:
@@ -452,6 +508,10 @@ MuG is used when `--engine` is omitted. List all command-line options with:
 The six difficulty presets control the **output charts**: their target average NPS, rolling one-second peak, maximum simultaneous notes, same-lane spacing, and long-note limits. When the music does not contain enough clear attacks, the generator lowers the measured density and reports it instead of filling silent sections just to hit a target.
 
 The model reference difficulty under **Model and advanced settings** is only an input condition for the shared source chart. It is not a Malody level and does not need to match any of the six output presets. MuG uses an osu! star-rating condition; V32 uses its own 1–10 condition. Start with the defaults and adjust after reviewing the preview and measured statistics.
+
+Search YouTube in pages of up to 20 tracks, filter by duration, select up to 20 songs, then submit one shared settings snapshot to the FIFO queue. Restarted waiting jobs pause until resumed; failed jobs do not block the rest. Single-difficulty iteration reuses local generation candidates and keeps every chart/package version. Heuristic density, silence, and subdivision alerts are review hints only; structural lane conflicts block export.
+
+Queue execution remains serial unless the current GPU and driver pass the local benchmark: six single-engine/duration runs, all three same-engine and cross-engine pairs, valid six-difficulty packages, and at least 2 GiB of free VRAM under pair load. Run `.\.venv\Scripts\python.exe tools\hardware_benchmark.py --short short.wav --medium medium.wav --long long.wav` with local 5–60 s, 60–180 s, and 180–600 s audio. Reports are written to `benchmarks/`; `--skip-parallel` cannot qualify the device for parallel jobs.
 
 NPS and the preset labels are not official Malody ratings. Package validation checks the ZIP, MC JSON, tracks, timing, and audio references, but it cannot replace importing and play-testing the chart on a device.
 

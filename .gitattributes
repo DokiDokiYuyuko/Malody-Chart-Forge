@@ -1,0 +1,8 @@
+# Preserve exact bytes used by pinned-source and environment integrity checks.
+vendor/RoFormer/** -text whitespace=cr-at-eol
+models/separation/** -text whitespace=cr-at-eol
+runtime/separation-requirements-lock.txt -text whitespace=cr-at-eol
+runtime/roformer-requirements-lock.txt -text whitespace=cr-at-eol,-blank-at-eof
+
+# Retain the distributed CC0 license verbatim, including its original whitespace.
+web/assets/keysounds/LICENSE.txt -text whitespace=cr-at-eol,-blank-at-eol

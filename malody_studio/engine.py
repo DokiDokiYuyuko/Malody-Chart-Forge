@@ -1,5 +1,6 @@
 """Headless inference adapter: no upstream WebUI, external update checks or training."""
 import sys
+import os
 import math
 import random
 import gc
@@ -19,12 +20,22 @@ def mug_condition_features(options):
                 'rc': int(ln_ratio < .1), 'hb': int(.1 <= ln_ratio < .4),
                 'ln': int(ln_ratio >= .4)}
     pattern = options.get('pattern', 'balanced')
+    # MuG's feature schema has no standalone Speed token. Speed uses the
+    # supported Stream condition and is distinguished by the local lane planner.
+    if pattern == 'speed':
+        pattern = 'stream'
     if pattern != 'balanced':
         features[pattern] = 1
         features[pattern + '_ett'] = options.get('pattern_strength', 20)
     return features
 
 class Engine:
+    def __new__(cls):
+        if os.environ.get('STARTRAIL_GPU_RESIDENT') != '1' and os.environ.get('STARTRAIL_RESIDENT_DISABLED') != '1':
+            from .resident_mug import RemoteEngine
+            return RemoteEngine()
+        return super().__new__(cls)
+
     def __init__(self):
         self.model = None
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'

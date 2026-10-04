@@ -19,12 +19,17 @@ PRESETS = {
     'lunatic': dict(label='Lunatic', sr=8.0, rate=26.0, chord_size=2.1, gap=35, chord=4, peak=38, hold_ms=180),
 }
 PATTERN_CHOICES = ('balanced', 'stream', 'jumpstream', 'handstream', 'chordjack',
-                   'stamina', 'jackspeed', 'technical')
+                   'stamina', 'jackspeed', 'speed', 'technical')
+PATTERN_LABELS = {
+    'balanced': 'Balanced', 'jackspeed': 'Jack', 'stream': 'Stream',
+    'speed': 'Speed', 'jumpstream': 'Jumpstream', 'handstream': 'Handstream',
+    'chordjack': 'Chordjack', 'stamina': 'Stamina', 'technical': 'Technical',
+}
 V32_PATTERN_TAGS = {
     'stream': 'skillset/streams', 'jumpstream': 'style/jumpstream',
     'handstream': 'style/handstream', 'chordjack': 'style/chordjack',
     'stamina': 'streams/stamina', 'jackspeed': 'skillset/speedjack',
-    'technical': 'skillset/tech',
+    'speed': 'skillset/streams', 'technical': 'skillset/tech',
 }
 POLICY = '共享母谱 + 音频起音辅助六档难度分层 v2'
 
@@ -66,8 +71,8 @@ def attacks(y, sr, master):
             merged.append(item)
     return merged
 
-def calibrate(candidates, duration_ms, key, ln_ratio, seed, overrides=None):
-    preset = {**PRESETS[key], **(overrides or {})}
+def calibrate(candidates, duration_ms, key, ln_ratio, seed, overrides=None, pattern='balanced', min_notes=8):
+    preset = {**PRESETS[key], **(overrides or {}), 'min_notes': min_notes}
     rng = np.random.default_rng(seed)
     windows = defaultdict(list)
     for candidate in candidates:
@@ -107,9 +112,27 @@ def calibrate(candidates, duration_ms, key, ln_ratio, seed, overrides=None):
     hold_slots = sum(min(voices, sum(n.end is not None for n in event[2])) for event, voices in scheduled)
     hold_probability = min(1, ln_ratio * sum(v for _, v in scheduled) / max(1, hold_slots))
     output, last, occupied, counts = [], [-1e9]*4, [-1e9]*4, [0]*4
+    last_lane = None
+    lane_history = []
     for (timestamp, strength, originals), voices in scheduled:
         preferred = [note.lane for note in originals]
-        lanes = sorted(range(4), key=lambda lane: (counts[lane]*60 - (200 if lane in preferred else 0), last[lane]))
+        if pattern == 'jackspeed' and last_lane is not None:
+            # Favor a repeated lane while the selected difficulty's gap rule
+            # remains the hard limit. If unavailable, fall back to a safe lane.
+            lanes = [last_lane] + [lane for lane in range(4) if lane != last_lane]
+        elif pattern == 'stream':
+            previous = lane_history[-1] if lane_history else None
+            lanes = sorted(range(4), key=lambda lane: (
+                lane == previous, counts[lane] * 60 - (200 if lane in preferred else 0), last[lane]))
+        elif pattern == 'speed':
+            previous = lane_history[-1] if lane_history else None
+            previous_hand = previous // 2 if previous is not None else None
+            lanes = sorted(range(4), key=lambda lane: (
+                lane // 2 == previous_hand, lane == previous,
+                counts[lane] * 60 - (200 if lane in preferred else 0), last[lane]))
+        else:
+            lanes = sorted(range(4), key=lambda lane: (
+                counts[lane]*60 - (200 if lane in preferred else 0), last[lane]))
         available = [lane for lane in lanes if timestamp - last[lane] >= preset['gap']
                      and timestamp >= occupied[lane] + 35]
         for lane in available[:voices]:
@@ -122,6 +145,8 @@ def calibrate(candidates, duration_ms, key, ln_ratio, seed, overrides=None):
             output.append(Note(timestamp, lane, end))
             last[lane], occupied[lane] = timestamp, end or timestamp
             counts[lane] += 1
+            last_lane = lane
+            lane_history.append(lane)
     notes = clean_notes(output, duration_ms, preset)
     return notes, {'policy': POLICY, 'target_active_nps': preset['rate'],
                    'target_chord_size': preset['chord_size'],
@@ -129,4 +154,7 @@ def calibrate(candidates, duration_ms, key, ln_ratio, seed, overrides=None):
                    'max_hold_ms': preset['hold_ms'], 'peak_cap': preset['peak'],
                    'candidate_attacks': len(candidates), 'scheduled_notes': sum(v for _, v in scheduled),
                    'phone_filtered_notes': len(output) - len(notes),
-                   'model_anchor_notes': sum(any(abs(n.start-c[0]) < .1 and c[2] for c in candidates) for n in notes)}
+                   'model_anchor_notes': sum(any(abs(n.start-c[0]) < .1 and c[2] for c in candidates) for n in notes),
+                   'pattern': pattern,
+                   'same_lane_repeat_ratio': round(sum(a.lane == b.lane for a, b in zip(notes, notes[1:])) / max(1, len(notes)-1), 4),
+                   'hand_alternation_ratio': round(sum((a.lane // 2) != (b.lane // 2) for a, b in zip(notes, notes[1:])) / max(1, len(notes)-1), 4)}

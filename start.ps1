@@ -5,19 +5,33 @@ $env:TEMP = Join-Path $root 'cache'
 $env:TMP = $env:TEMP
 $env:PYTHONUTF8 = '1'
 New-Item -ItemType Directory -Force -Path (Join-Path $root 'logs') | Out-Null
-$port = 8765
-$url = "http://127.0.0.1:$port"
-$existing = $null
-try { $existing = Invoke-RestMethod "$url/api/health" -TimeoutSec 30 } catch {}
-if ($existing -and $existing.api_version -ge 2) { Start-Process $url; exit 0 }
-if ($existing -or (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
-    $port = 8766
-    $url = "http://127.0.0.1:$port"
+# Reuse a server with the current workflow, rather than opening an older
+# process that happens to answer the original health endpoint.
+function Test-CurrentServer([string]$candidateUrl) {
     try {
-        $existing = Invoke-RestMethod "$url/api/health" -TimeoutSec 30
-        if ($existing.api_version -ge 2) { Start-Process $url; exit 0 }
-    } catch {}
+        $health = Invoke-RestMethod "$candidateUrl/api/health" -TimeoutSec 3
+        if ($health.api_version -lt 2 -or $health.advanced_workflow_version -lt 6 -or $health.gpu_resident_version -lt 1) { return $false }
+        $schema = Invoke-RestMethod "$candidateUrl/openapi.json" -TimeoutSec 3
+        $paths = $schema.paths.PSObject.Properties.Name
+        return ($paths -contains '/api/advanced/projects/{pid}/separation-trials' -and
+                $paths -contains '/api/advanced/separation/models' -and
+                $paths -contains '/api/advanced/projects/{pid}/audition-metadata' -and
+                $paths -contains '/api/advanced/projects/{pid}/separations' -and
+                $paths -contains '/api/advanced/projects/{pid}/segmentation-apply' -and
+                $paths -contains '/api/advanced/projects/{pid}/generation-batches' -and
+                $paths -contains '/api/gpu/resident/release')
+    } catch { return $false }
 }
+$port = $null
+foreach ($candidatePort in 8765..8774) {
+    $candidateUrl = "http://127.0.0.1:$candidatePort"
+    if (Test-CurrentServer $candidateUrl) { Start-Process $candidateUrl; exit 0 }
+    if ($null -eq $port -and -not (Get-NetTCPConnection -LocalPort $candidatePort -State Listen -ErrorAction SilentlyContinue)) {
+        $port = $candidatePort
+    }
+}
+if ($null -eq $port) { throw 'No free local port (8765-8774). Close an unused server and try again.' }
+$url = "http://127.0.0.1:$port"
 $python = Join-Path $root '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python)) { throw 'Environment is not configured. Run 一键配置环境.bat first.' }
 $logStem = if ($port -eq 8765) { 'server' } else { "server-$port" }

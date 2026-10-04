@@ -81,3 +81,21 @@ models/
 ## 维护
 
 `tools/download_mapperatorinator.py` 下载 mania 权重，`--base` 下载节拍模型；下载可重试并校验公开 LFS 哈希。`tools/update_model_registry.py` 根据清单重建本文档。更换权重时使用新版本目录，固定版本与哈希并重新验证后再启用。
+
+## 人声分离（独立环境）
+
+`separation/demucs-4.0.1/` 保存官方 `htdemucs` 模型、模型bag配置、MIT许可证和完整SHA-256登记。默认权重为 `955717e8-8726e21a.th`；来源 `https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/`，代码固定Demucs4.0.1。运行环境为项目内 `runtime/separation-venv`：Python3.10.19、Torch2.0.1+cu118、Torchaudio2.0.2+cu118、NumPy1.26.4；实际完整锁位于 `runtime/separation-requirements-lock.txt`，不改现有MuG/V32环境。首次真实推理发现新版einops与旧Torch初始化不兼容，现固定einops0.7.0、setuptools70.3.0并已通过真实分离。
+
+安装工具 `tools/setup_separation.ps1`；加 `-FineTuned` 可部署可选 `htdemucs_ft` 四模型bag，首轮默认未安装该慢档。权重和配置的校验与真实推理验证分别登记；默认实际验证记录见 `cache/separation-acceptance.json`。
+
+2026-10-03在本机RTX4080 SUPER上，290.112秒原曲已完成默认GPU分离：12,793,940源帧，两stem精确同帧数、双声道FLOAT44100、origin0；总耗时57.17秒（worker52.985秒），Torch allocator峰值allocated573,086,208字节/reserved725,614,592字节。这是单次记录，不是性能保证，也不代表机器总显存使用。28–44秒两stem之和相对原混音的局部相关峰lag为0samples，相关系数0.99943；原曲WAV哈希未变。此检查不代表每个声部的起音/人声识别均正确，尚需听辨及制谱验收。
+
+分离只用于采音/分析/试听；伴奏浮点峰值可超过1，保留原模型幅度而不单stem归一化。成品依旧从原曲PCM组装，详细版本/融合规则见 `docs/stem-generation.md`。
+
+### Kim Mel-Band RoFormer（试验质量档）
+
+独立运行在 `runtime/roformer-venv`（Python 3.10、Torch 2.5.1+cu124），不替换 Demucs、MuG 或 V32 的依赖。MSST 推理代码固定于 `e247dfe4abc1f17c69dff719207fe045dc04413a`，权重固定于 KimberleyJSN/melbandroformer revision `ac9b0614ab3cd7f77219e18ba494dfd93956c348`，文件 `MelBandRoformer.ckpt` 为 913106900 字节，SHA256 为 `87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e`。代码和权重来源声明 MIT，原许可证随配置保留。
+
+窗口固定为 352800 采样（8 秒），覆盖 2/4/8 次；默认 4 次、batch 1、CUDA AMP、关闭 TTA。伴奏在任何试听增益之前以原曲减人声计算，保留完整立体声 PCM 帧数。CUDA 不可用或显存不足会明确失败。
+
+2026-10-04 本机 4080 SUPER 全曲测试：D/N/A 129.59 秒，2/4 次覆盖含队列与启动耗时 22.58/28.61 秒；《初音未来的消失》290.11 秒，31.59/43.89 秒。四次运行整块 GPU 峰值占用不超过 5908 MiB，最少剩余 10468 MiB（外部每 3 秒采样；不是绝对瞬时峰值）。worker 自身峰值 reserved 2.04 GiB。安装、局部试听与采用步骤见 [分离实验室指南](../docs/separation-upgrade-guide.md)。质量档仍需逐片段试听判断，不能以重组误差接近零替代分离质量评价。

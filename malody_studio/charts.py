@@ -4,6 +4,7 @@ All internal timestamps refer to the packaged audio, in milliseconds.
 The BGM event is at beat zero and stores negative beat-zero audio time.
 """
 from collections import Counter, deque
+import copy
 from dataclasses import dataclass
 from fractions import Fraction
 import json
@@ -17,6 +18,13 @@ class Note:
     start: float
     lane: int
     end: float | None = None
+
+class ChartStructureError(ValueError):
+    def __init__(self, message, start_ms=None, end_ms=None, lane=None):
+        super().__init__(message)
+        self.start_ms=start_ms
+        self.end_ms=end_ms
+        self.lane=lane
 
 def beat_value(value):
     if len(value) != 3 or not all(isinstance(x, int) and not isinstance(x, bool) for x in value):
@@ -79,7 +87,7 @@ def clean_notes(notes, duration_ms, preset):
         occupied[n.lane] = end if end is not None else n.start
         starts.append(n.start)
         chords[timestamp] += 1
-    if len(output) < 8:
+    if len(output) < preset.get('min_notes', 8):
         raise ValueError('有效音符太少，请检查音频或调整难度后重试')
     return output
 
@@ -163,7 +171,8 @@ def validate_chart(chart, audio_duration_ms):
         if 'endbeat' in event and end <= start:
             raise ValueError('长条时长必须为正')
         if start <= last_start[lane] + 0.1 or start < last_end[lane] - 0.1:
-            raise ValueError('同轨存在重复音符或长条冲突')
+            raise ChartStructureError(f'第 {lane + 1} 轨在 {start:.0f} ms 附近存在重复音符或长条冲突',
+                                     start_ms=round(start),end_ms=round(end),lane=lane)
         previous_time = start
         last_start[lane] = start
         last_end[lane] = end
@@ -172,31 +181,60 @@ def validate_chart(chart, audio_duration_ms):
         raise ValueError('谱面没有可击打音符')
     return {'valid': True, 'notes': total, 'audio': 'OGG Vorbis', 'mode': '4K'}
 
-def package(directory, charts, audio_path, report, background=None):
+def _compact_timing_points(chart):
+    """Drop repeated timing markers that do not change BPM or other timing data."""
+    packed = copy.deepcopy(chart)
+    compact = []
+    for point in packed.get('time', []):
+        if compact:
+            previous = compact[-1]
+            current_fields = {key: value for key, value in point.items() if key != 'beat'}
+            previous_fields = {key: value for key, value in previous.items() if key != 'beat'}
+            if current_fields == previous_fields:
+                continue
+        compact.append(point)
+    packed['time'] = compact
+    return packed
+
+
+def package(directory, charts, audio_path, report, background=None, filenames=None):
     directory = Path(directory)
     song = directory / '0'
     song.mkdir(exist_ok=True)
     import shutil
-    shutil.copyfile(audio_path, song / 'audio.ogg')
+    if Path(audio_path).resolve() != (song / 'audio.ogg').resolve():
+        shutil.copyfile(audio_path, song / 'audio.ogg')
     if background:
-        shutil.copyfile(background, song / 'background.jpg')
+        if Path(background).resolve() != (song / 'background.jpg').resolve():
+            shutil.copyfile(background, song / 'background.jpg')
     for chart in charts.values():
         if chart['meta'].get('background') and (not background or chart['meta']['background'] != 'background.jpg'):
             raise ValueError('背景图片引用缺失或无效')
+    filenames = filenames or {}
+    names = {}
     for key, chart in charts.items():
-        (song / f'{key}.mc').write_text(json.dumps(chart, ensure_ascii=False, indent=2), encoding='utf-8')
+        packed_chart = _compact_timing_points(chart)
+        filename = filenames.get(key, f'{key}.mc')
+        if Path(filename).name != filename or not filename.lower().endswith('.mc'):
+            raise ValueError('谱面文件名无效')
+        names[key] = filename
+        (song / filename).write_text(json.dumps(packed_chart, ensure_ascii=False, indent=2), encoding='utf-8')
     (directory / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-    name = report.get('engine', 'MuG Diffusion v1.0.0')
-    policy = report.get('engine_metadata', {}).get('difficulty_policy', 'Model-conditioned difficulty presets')
-    (song / 'generation.txt').write_text(f'Generated with {name}. AI generation disclosed.\nDifficulty policy: {policy}\nOffline personal chart generation. Difficulty names are presets, not certified Malody levels.\n', encoding='utf-8')
+    keep = {'audio.ogg', 'background.jpg', *names.values()}
+    for path in song.iterdir():
+        if path.is_file() and path.suffix.lower() == '.mc' and path.name not in keep:
+            path.unlink()
     archive = directory / 'malody-4k.mcz'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('0/', b'')
         for path in sorted(song.iterdir()):
+            if path.name == 'generation.txt':
+                continue
             z.write(path, f'0/{path.name}')
     with zipfile.ZipFile(archive) as z:
         if z.testzip() is not None:
             raise ValueError('曲包压缩校验失败')
         for key in charts:
-            decoded = json.loads(z.read(f'0/{key}.mc'))
+            decoded = json.loads(z.read(f'0/{names[key]}'))
             validate_chart(decoded, report['duration'] * 1000)
     return archive

@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/ZFTurbo/Music-Source-Separation-Training",
+  "commit": "e247dfe4abc1f17c69dff719207fe045dc04413a",
+  "license": "MIT",
+  "upstream_files": {
+    "LICENSE": {
+      "sha256": "3282dc057695ef5b9a64909a7092ca40b2c292c232580fc6ace6e5d665cc0207",
+      "bytes": 1081,
+      "url": "https://raw.githubusercontent.com/ZFTurbo/Music-Source-Separation-Training/e247dfe4abc1f17c69dff719207fe045dc04413a/LICENSE"
+    },
+    "models/bs_roformer/attend.py": {
+      "sha256": "0459d799ade55541df2994b0becf7aec12214491360c5a06e346f6d615eaed15",
+      "bytes": 3681,
+      "url": "https://raw.githubusercontent.com/ZFTurbo/Music-Source-Separation-Training/e247dfe4abc1f17c69dff719207fe045dc04413a/models/bs_roformer/attend.py"
+    },
+    "models/bs_roformer/mel_band_roformer.py": {
+      "sha256": "3b4a57ab268933900172e05fb76dd9e8acc1eb770c745d583a4e42b94b79ec15",
+      "bytes": 22532,
+      "url": "https://raw.githubusercontent.com/ZFTurbo/Music-Source-Separation-Training/e247dfe4abc1f17c69dff719207fe045dc04413a/models/bs_roformer/mel_band_roformer.py"
+    },
+    "configs/KimberleyJensen/config_vocals_mel_band_roformer_kj.yaml": {
+      "sha256": "f63f38eb1e6e40a7db0dade714a5ae257555dd8748f4e774eae8679275a81926",
+      "bytes": 1721,
+      "url": "https://raw.githubusercontent.com/ZFTurbo/Music-Source-Separation-Training/e247dfe4abc1f17c69dff719207fe045dc04413a/configs/KimberleyJensen/config_vocals_mel_band_roformer_kj.yaml"
+    }
+  },
+  "local_changes": [
+    "Add an inference-only models/__init__.py.",
+    "Reduce models/bs_roformer/__init__.py to the retained MelBandRoformer class; omit other model families."
+  ],
+  "execution": "Uses native PyTorch attention. No torch.compile, external flash-attn, PoPE, or training dependencies are installed."
+}

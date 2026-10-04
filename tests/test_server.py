@@ -2,6 +2,14 @@ import pytest
 from fastapi.testclient import TestClient
 from malody_studio import server
 
+@pytest.fixture
+def empty_advanced_library(monkeypatch, tmp_path):
+    from malody_studio import advanced, advanced_api
+    store = advanced.ProjectStore(tmp_path / 'advanced')
+    monkeypatch.setattr(advanced_api, 'store', store)
+    return store
+
+
 def test_six_difficulties_and_legacy_normal_alias():
     options = server.settings('t', 'a', '["easy","medium","hard","expert","master","lunatic"]', .15, 50, 42, None)
     assert len(options['difficulties']) == 6
@@ -51,7 +59,7 @@ def test_mug_readiness_requires_pinned_sha256_and_engine_rejects_bad_file(monkey
         server.ensure_engine({'engine':'mug'})
     assert error.value.status_code == 503
 
-def test_history_filters_engine_status_difficulty_and_sort(monkeypatch):
+def test_history_filters_engine_status_difficulty_and_sort(monkeypatch, empty_advanced_library):
     records = {
         'a': dict(id='a', title='Alpha', artist='Singer', created='2025-01', status='completed',
                   options={'engine':'mug','difficulties':['easy']}, report={'difficulties':[{'key':'easy','label':'Easy'}]}),
@@ -151,7 +159,7 @@ def test_failed_upload_job_can_retry_without_sharing_cleanup_owner(monkeypatch, 
     assert '_source_upload' not in seen[0][1]
     assert options['_source_upload'] == source_name
 
-def test_history_pagination_keeps_all_records_and_supports_search(monkeypatch):
+def test_history_pagination_keeps_all_records_and_supports_search(monkeypatch, empty_advanced_library):
     records = {str(i): dict(id=str(i),title=f'Song {i}',artist='a',created=f'{i:03}',status='completed',options={'engine':'v32'}) for i in range(70)}
     monkeypatch.setattr(server, 'jobs', records)
     with TestClient(server.app) as client:
@@ -207,3 +215,170 @@ def test_ogg_seek_ranges(tmp_path, header, code, expected):
         result = client.get('/audio', headers={'Range': header} if header else {})
         assert result.status_code == code
         assert result.content == expected
+
+
+def test_dispatch_is_fifo_and_keeps_one_active_by_default(monkeypatch,tmp_path):
+    class Pool:
+        def __init__(self):self.calls=[]
+        def submit(self,*args):self.calls.append(args)
+    pool=Pool();monkeypatch.setattr(server,'pool',pool);monkeypatch.setattr(server,'jobs',{})
+    monkeypatch.setattr(server,'scheduler_active',set())
+    monkeypatch.setattr(server,'ROOT',tmp_path)
+    monkeypatch.setattr(server,'configured_concurrency',lambda:1)
+    for index in (2,1):
+        job_id=f'{index:032x}';(tmp_path/'outputs'/job_id).mkdir(parents=True)
+        server.jobs[job_id]={'id':job_id,'title':str(index),'artist':'a','status':'queued','queue_order':index,
+            'options':{},'created':f'2026-01-0{index}'}
+    server.dispatch_next()
+    assert pool.calls[0][1]=='0'*31+'1'
+    assert server.jobs['0'*31+'1']['status']=='running'
+    assert server.jobs['0'*31+'2']['status']=='queued'
+
+
+def test_queue_resume_and_waiting_cancellation(monkeypatch,tmp_path):
+    job_id='e'*32;out=tmp_path/'outputs'/job_id;out.mkdir(parents=True)
+    (tmp_path/'uploads').mkdir()
+    source_name='f'*32+'.wav';(tmp_path/'uploads'/source_name).write_bytes(b'audio')
+    monkeypatch.setattr(server,'ROOT',tmp_path)
+    monkeypatch.setattr(server,'jobs',{job_id:{'id':job_id,'title':'Paused','artist':'A','status':'paused',
+        'message':'restart','progress':0,'queue_order':4,'created':'now','options':{},
+        'source_ref':{'type':'upload','name':source_name}}})
+    class Pool:
+        def __init__(self):self.calls=[]
+        def submit(self,*args):self.calls.append(args)
+    pool=Pool();monkeypatch.setattr(server,'pool',pool);monkeypatch.setattr(server,'scheduler_active',set())
+    monkeypatch.setattr(server,'configured_concurrency',lambda:1)
+    with TestClient(server.app) as client:
+        response=client.post('/api/queue/resume')
+        assert response.status_code==200 and response.json()['resumed']==[job_id]
+        assert server.jobs[job_id]['status']=='running'
+        server.jobs[job_id]['status']='queued'
+        cancelled=client.delete('/api/jobs/'+job_id)
+        assert cancelled.status_code==200 and cancelled.json()['cancelled']==job_id
+    assert server.jobs[job_id]['status']=='cancelled'
+
+
+def test_queue_failure_does_not_block_next_job(monkeypatch,tmp_path):
+    ids=['1'*32,'2'*32]
+    for item in ids:(tmp_path/'outputs'/item).mkdir(parents=True)
+    monkeypatch.setattr(server,'ROOT',tmp_path)
+    monkeypatch.setattr(server,'jobs',{
+        ids[0]:{'id':ids[0],'status':'running','title':'bad','artist':'','queue_order':1,'options':{}},
+        ids[1]:{'id':ids[1],'status':'queued','title':'next','artist':'','queue_order':2,'options':{}}})
+    monkeypatch.setattr(server,'scheduler_active',{ids[0]})
+    monkeypatch.setattr(server,'resolve_source_ref',lambda job:(_ for _ in ()).throw(ValueError('source missing')))
+    class Pool:
+        def __init__(self):self.calls=[]
+        def submit(self,*args):self.calls.append(args)
+    pool=Pool();monkeypatch.setattr(server,'pool',pool);monkeypatch.setattr(server,'configured_concurrency',lambda:1)
+    server.run_queued_job(ids[0])
+    assert server.jobs[ids[0]]['status']=='failed'
+    assert server.jobs[ids[1]]['status']=='running'
+    assert pool.calls[-1][1]==ids[1]
+
+
+def test_failed_structural_job_keeps_audio_for_diagnostic_preview(monkeypatch,tmp_path):
+    job_id='c'*32;audio=tmp_path/'outputs'/job_id/'0'/'audio.ogg';audio.parent.mkdir(parents=True)
+    audio.write_bytes(b'OggSdiagnostic')
+    monkeypatch.setattr(server,'ROOT',tmp_path)
+    monkeypatch.setattr(server,'jobs',{job_id:{'id':job_id,'status':'failed','options':{}}})
+    with TestClient(server.app) as client:
+        response=client.get(f'/api/jobs/{job_id}/files/audio.ogg')
+        assert response.status_code==200 and response.content==b'OggSdiagnostic'
+        assert client.get(f'/api/jobs/{job_id}/files/easy.mc').status_code==409
+from types import SimpleNamespace
+
+def test_parallel_control_is_hidden_until_full_hardware_gate(monkeypatch,tmp_path):
+    import torch
+    from malody_studio import server
+    monkeypatch.setattr(server,'ROOT',tmp_path)
+    monkeypatch.setattr(torch.cuda,'is_available',lambda:True)
+    monkeypatch.setattr(torch.cuda,'get_device_name',lambda index:'Test GPU')
+    monkeypatch.setattr(server.subprocess,'run',lambda *a,**kw:SimpleNamespace(stdout='555.1'))
+    singles={f'{engine}:{length}':{'success':True,'artifact_valid':True}
+        for engine in ('mug','v32') for length in ('short','medium','long')}
+    pairs={key:{'success':True,'artifacts_valid':True,'min_free_vram_bytes':3*1024**3}
+        for key in ('mug+mug','mug+v32','v32+v32')}
+    benchmark=tmp_path/'benchmarks'/'latest.json';benchmark.parent.mkdir(parents=True)
+    import json
+    for item in pairs.values():item['faster_than_serial']=True
+    benchmark.write_text(json.dumps({'device_name':'Test GPU','driver_version':'555.1',
+        'v32_inference_policy':server.V32_INFERENCE_POLICY,
+        'single_tests':singles,'parallel_tests':pairs}),encoding='utf-8')
+    assert server.parallel_benchmark_gate()[0] is True
+    assert server.configured_concurrency()==1
+    with TestClient(server.app) as client:
+        assert client.get('/api/queue').json()['parallel_enabled'] is True
+        assert client.post('/api/queue/concurrency',json={'value':2}).status_code==200
+        assert client.get('/api/queue').json()['concurrency']==2
+    pairs['mug+mug']['min_free_vram_bytes']=1024**3
+    benchmark.write_text(json.dumps({'device_name':'Test GPU','driver_version':'555.1',
+        'v32_inference_policy':server.V32_INFERENCE_POLICY,
+        'single_tests':singles,'parallel_tests':pairs}),encoding='utf-8')
+    assert server.parallel_benchmark_gate()[0] is False
+    assert server.configured_concurrency()==1
+    pairs['mug+mug']['min_free_vram_bytes']=3*1024**3
+    pairs['v32+v32']['faster_than_serial']=False
+    benchmark.write_text(json.dumps({'device_name':'Test GPU','driver_version':'555.1',
+        'v32_inference_policy':server.V32_INFERENCE_POLICY,
+        'single_tests':singles,'parallel_tests':pairs}),encoding='utf-8')
+    ready,reason=server.parallel_benchmark_gate()
+    assert not ready and '比串行更快' in reason
+
+def test_parallel_gate_rejects_stale_inference_and_slow_pairs(monkeypatch,tmp_path):
+    import json
+    import torch
+    from types import SimpleNamespace
+    from malody_studio import server
+    monkeypatch.setattr(server,'ROOT',tmp_path)
+    monkeypatch.setattr(torch.cuda,'is_available',lambda:True)
+    monkeypatch.setattr(torch.cuda,'get_device_name',lambda index:'Test GPU')
+    monkeypatch.setattr(server.subprocess,'run',lambda *a,**kw:SimpleNamespace(stdout='555.1'))
+    path=tmp_path/'benchmarks'/'latest.json';path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({'device_name':'Test GPU','driver_version':'555.1'}),encoding='utf-8')
+    ready,reason=server.parallel_benchmark_gate()
+    assert not ready and '推理策略已更新' in reason
+
+
+def test_history_merges_advanced_products_with_stable_preview_and_filtered_counts(
+        monkeypatch, empty_advanced_library):
+    from malody_studio import advanced
+    store = empty_advanced_library
+    pid, aid = 'a' * 32, 'b' * 32
+    project = {'id': pid, 'title': 'Advanced song', 'artist': 'Singer', 'background': True,
+               'assemblies': [{'id': aid, 'created': '2026-10-04T12:00:00+08:00',
+                               'duration': 3, 'mapping': [{'segment_id': 'segment'}]},
+                              {'id': None}]}
+    advanced.atomic(store.directory(pid) / 'project.json', project)
+    folder = store.directory(pid) / 'assemblies' / aid
+    advanced.atomic(folder / 'report.json', {'charts': [{'engine': 'v32', 'difficulty': 'hard'}]})
+    (folder / 'audio.ogg').write_bytes(b'fixture-audio')
+    (folder / '0').mkdir()
+    (folder / '0' / 'balanced--hard.mc').write_text('{}', encoding='utf-8')
+    # Corrupt historical records must not break the complete package list.
+    advanced.atomic(store.directory('c' * 32) / 'project.json', [])
+    bad = store.directory('d' * 32) / 'project.json'
+    bad.parent.mkdir()
+    bad.write_text('{', encoding='utf-8')
+    monkeypatch.setattr(server, 'jobs', {'ordinary': {
+        'id': 'ordinary', 'title': 'Alpha', 'artist': 'Band', 'created': '2026-10-02',
+        'status': 'failed', 'options': {'engine': 'mug', 'difficulties': ['easy']}}})
+    with TestClient(server.app) as client:
+        result = client.get('/api/history?page_size=1').json()
+        assert result['total'] == result['total_all'] == 2
+        assert result['pages'] == 2
+        item = result['items'][0]
+        assert item['type'] == item['engine'] == 'advanced'
+        assert (item['project_id'], item['assembly_id']) == (pid, aid)
+        assert item['cover'] == f'/api/advanced/projects/{pid}/background'
+        assert item['download'] == f'/api/advanced/projects/{pid}/assemblies/{aid}/download'
+        assert item['difficulty_labels'] == ['Hard']
+        assert client.get('/api/history?page=2&page_size=1').json()['items'][0]['id'] == 'ordinary'
+        for query in ('engine=advanced', 'engine=v32', 'difficulty=hard'):
+            data = client.get('/api/history?' + query).json()
+            assert data['total'] == 1 and data['total_all'] == 2
+            assert data['items'][0]['assembly_id'] == aid
+        data = client.get('/api/history?q=Alpha').json()
+        assert data['total'] == 1 and data['total_all'] == 2
+        assert data['items'][0]['id'] == 'ordinary'
+        assert client.get('/api/history?status=failed').json()['total'] == 1
