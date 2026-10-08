@@ -73,6 +73,7 @@ def test_download_uses_best_available_audio_only_format(monkeypatch,tmp_path):
     assert record['file']=='source.webm' and record['sha256']==music._file_hash(source)
 
 def test_generate_uses_downloaded_source_and_provenance(monkeypatch,tmp_path):
+    monkeypatch.setattr(server,'ensure_engine',lambda *_:None)
     track={'url':'https://www.youtube.com/watch?v=UKZt1vq8bKI'}
     monkeypatch.setattr(music,'ready_audio',lambda video_id:(tmp_path/'audio.ogg',track))
     captured=[]

@@ -1,47 +1,87 @@
-# Local Python environments and package caches
+# Local environments, executables and installation caches
 .venv/
-runtime/mapperatorinator-venv/
-runtime/wheels/
-runtime/bin/yt-dlp.exe
 __pycache__/
+*.pyc
 .pytest_cache/
+node_modules/
+/runtime/*
+!/runtime/*requirements*.txt
+!/runtime/music-source-settings.example.json
 
-# Generated data, downloads and local logs
-cache/
-uploads/
-outputs/
-logs/
+# User music, private settings, generated charts and local evidence
+/cache/
+/uploads/
+/outputs/
+/output/
+/logs/
+/private/
+/work/
+/artifacts/
+/deliveries/
+/benchmarks/
+/data/*
+!/data/calibrations/
+/data/calibrations/*
+!/data/calibrations/nps-star-mapping/
 *.log
+*.mcz
+*.mc
+*.osu
 *.part
 *.assembling
 *.parts/
-
-# Large model weights: fetch separately using the README instructions
-models/**/*.ckpt
-models/**/*.safetensors
-models/**/*.th
-runtime/separation-venv/
-runtime/roformer-venv/
-runtime/python/
-
-# Local settings and editor files
+*cookies*.txt
+*.pem
+*.key
 .env
-/private/
 .env.*
 !.env.example
+
+# Runtime calibration helpers only; research data stays local
+/util/*
+!/util/nps_star_mapping/
+/util/nps_star_mapping/*
+!/util/nps_star_mapping/mapping.py
+!/util/nps_star_mapping/query.py
+
+# Model weights and machine-specific readiness records
+/models/**/*.ckpt
+/models/**/*.safetensors
+/models/**/*.th
+/models/**/*.pt
+/models/**/*.pth
+/models/**/deployment-ready.json
+/models/**/deployment-manifest.json
+/models/**/manifest.before*.json
+/models/separation/**/manifest.json
+/vendor/beat_this-*/
+
+# Internal development documents; README screenshots are an explicit allowlist
+/AGENTS.md
+/skills/
+/docs/*
+!/docs/screenshots/
+/docs/screenshots/*
+!/docs/screenshots/readme-v2-*.png
+
+# Local experiments and validators tied to private song/project records
+/tools/validation_*
+/tools/mug_vocals*
+/tools/audit_rain_workflow.py
+/tools/advanced_evaluation.py
+/tools/benchmark_separation_charts.py
+/tools/build_separation_review.py
+/tools/evaluate_separation.py
+/tools/probe_difficulty.py
+/tools/run_separation_benchmark.py
+/tools/update_model_registry.py
+/tools/verify_*.py
+/tools/benchmark_v32_batching.py
+/tools/compare_v32_batching.py
+/tools/run_workflow_regression_experiments.py
+/tests/test_mug_vocals*.py
+
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-
-# Original third-party sound archives (selected licensed samples are in web/assets)
-/data/asset-sources/
-
-# Local GPU residency measurements and music-derived verification artifacts
-/work/resident-benchmark/
-/work/test_resident_real.py
-/work/test_resident_mug.py
-
-# Local diagnostic workspace and machine-specific separation installation records
-/work/
-/models/separation/**/manifest.json

@@ -1,0 +1,9 @@
+{
+  "mapping_id": "20261006-v4",
+  "mapping_sha256": "b91dc016225d5b4f062b7e917b960aed7c10144c9a48546ae03cc430eb5e8ebe",
+  "mapping_version": "chart-span-nps-sr-low7-extrapolation-v2",
+  "source": "frozen aggregate calibration; raw research corpus is not distributed",
+  "fit_sr_filter": "1 <= sr < 7",
+  "high_sr_policy": "low_star_trend_extrapolation",
+  "purpose": "production NPS-to-SR calibration asset; generated density still requires measurement"
+}

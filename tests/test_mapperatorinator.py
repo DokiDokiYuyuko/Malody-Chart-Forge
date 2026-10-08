@@ -3,6 +3,21 @@ import pytest
 from malody_studio.charts import Note, beat_value, validate_chart, package
 from malody_studio.mapperatorinator import read_osu, serialize_with_timing
 
+
+def test_only_advanced_requests_enable_native_attempt_diagnostics():
+    from malody_studio.mapperatorinator import build_worker_request
+    options = {'title':'source', 'artist':'artist', 'seed':17, 'ln_ratio':.2}
+    simple = build_worker_request('input.wav', 'output', options)
+    assert 'capture_native_trace' not in simple
+    assert 'native_event_policy' not in simple and 'grammar_policy' not in simple
+    presets = [{'key':'expert', 'label':'Expert', 'sr':5.9}]
+    advanced = build_worker_request('input.wav', 'output', {**options, '_advanced_presets':presets})
+    assert advanced['capture_native_trace'] is True and advanced['presets'] == presets
+    assert advanced['native_event_policy'] == 'mania-unlocated-fragments-v2'
+    assert advanced['grammar_policy'] == 'mania-grammar-mask-v1'
+    assert {k:v for k,v in advanced.items() if k not in ('presets','capture_native_trace','native_event_policy','grammar_policy')} == {
+        k:v for k,v in simple.items() if k != 'presets'}
+
 def test_multi_bpm_preserves_taps_and_hold_release_in_audio_time():
     # A hold crosses two tempo changes, with an initial timing offset before audio zero.
     notes = [Note(250, 0, 2600), Note(1200, 1), Note(3100, 3)]

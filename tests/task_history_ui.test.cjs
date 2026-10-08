@@ -41,9 +41,9 @@ test('advanced, legacy, single-song and separated results navigate to their reco
 });
 
 test('folder actions contain server-resolved record and task identities without paths', () => {
-  const item = record({output_dir:'I:/sensitive/anywhere'});
+  const item = record({output_dir:'X:/example/anywhere'});
   assert.deepEqual(folderIdentity(item),{record_id:'batch:p:b'});
-  assert.deepEqual(folderIdentity(item,{id:'j',output_dir:'I:/another'}),{record_id:'batch:p:b',job_id:'j'});
+  assert.deepEqual(folderIdentity(item,{id:'j',output_dir:'X:/example/another'}),{record_id:'batch:p:b',job_id:'j'});
 });
 
 test('partially failed history summaries report delivered success and failure counts', () => {

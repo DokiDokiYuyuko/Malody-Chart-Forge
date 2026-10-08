@@ -16,16 +16,37 @@ def segmentation_preview(store, pid, payload):
         plan = read(store.directory(pid)/'section-plans'/(plan_id+'.json'))
         if plan.get('samples') != p['samples'] or plan.get('source_pcm_sha') != p.get('source_pcm_sha256'):
             raise ValueError('分析不是当前完整原曲的结果，请重新分析')
-        cuts = payload.get('cuts', [part['core'][1] for part in plan['sections'][:-1]])
+        from .audio_bounds import content_end
+        stop=content_end(p)
+        bucket_policy=plan.get('bpm_buckets',{})
+        suggested=([part['range'][1] for part in bucket_policy['segments'] if part['range'][1]<stop]
+                   if bucket_policy.get('enabled') and bucket_policy.get('segments') else
+                   [part['core'][1] for part in plan['sections'][:-1] if part['core'][1]<stop])
+        cuts = payload.get('cuts',suggested)
         if not isinstance(cuts, list) or any(type(c) is not int for c in cuts) or len(set(cuts)) != len(cuts) or any(not 0 < c < p['samples'] for c in cuts):
             raise ValueError('建议边界须为原曲范围内不重复的整数采样点')
         # Existing boundaries always win; suggestions never extend a manual
         # segment into a deliberately omitted gap or alter its inclusion.
-        parents = p['segments'] or [{'id': None, 'name': '片段', 'start_sample': 0, 'end_sample': p['samples'], 'included': True}]
+        parents = p['segments'] or [{'id': None, 'name': '片段', 'start_sample': 0, 'end_sample': stop, 'included': True}]
         rows = []
+        accepted_cuts = set()
         for parent in parents:
             a, b = parent['start_sample'], parent['end_sample']
-            points = [a, *sorted(c for c in cuts if a < c < b), b]
+            proposed = sorted(c for c in cuts if a < c < b)
+            if 'cuts' not in payload:
+                # Automatic suggestions yield to the existing layout. A beat
+                # group near a manual boundary must not block the whole song.
+                kept = []
+                previous = a
+                minimum = max(MIN_SAMPLES, round(plan.get('region_policy', {}).get('minimum_seconds', .25)*p['sample_rate']))
+                if bucket_policy.get('enabled'):minimum=MIN_SAMPLES
+                for cut in proposed:
+                    if cut-previous >= minimum and b-cut >= minimum:
+                        kept.append(cut)
+                        previous = cut
+                proposed = kept
+            accepted_cuts.update(proposed)
+            points = [a, *proposed, b]
             for left, right in zip(points, points[1:]):
                 if right-left < MIN_SAMPLES:
                     raise ValueError('边界过近；每段至少 250 ms，请移动或合并建议边界')
@@ -38,7 +59,7 @@ def segmentation_preview(store, pid, payload):
                 raise ValueError('片段选择须与建议区间逐项对应')
             for row, included in zip(rows, selected): row['included'] = included
         draft = {'id': uid(), 'created': now(), 'project_revision': p['revision'], 'plan_id': plan['id'],
-                 'cuts': sorted(cuts), 'segments': rows, 'preserved_boundaries': sorted({s[k] for s in p['segments'] for k in ('start_sample', 'end_sample')}),
+                 'cuts': sorted(accepted_cuts), 'segments': rows, 'preserved_boundaries': sorted({s[k] for s in p['segments'] for k in ('start_sample', 'end_sample')}),
                  'previous_count': len(p['segments']), 'proposed_count': len(rows)}
         atomic(store.directory(pid)/'segmentation-drafts'/(draft['id']+'.json'), draft)
         return draft

@@ -57,7 +57,7 @@ def test_zip_contains_real_ogg_and_utf8_chart(tmp_path):
     ])
     archive = package(tmp_path, {'easy': chart}, audio, {'duration': 1})
     with zipfile.ZipFile(archive) as z:
-        assert '0/' in z.namelist()
+        assert '0/' not in z.namelist()
         assert '0/generation.txt' not in z.namelist()
         assert z.read('0/audio.ogg')[:4] == b'OggS'
         packed = json.loads(z.read('0/easy.mc'))

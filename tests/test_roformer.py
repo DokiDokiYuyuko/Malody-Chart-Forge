@@ -97,6 +97,11 @@ def test_new_and_old_adapter_manifests_are_independently_valid(tmp_path):
 
 
 def test_trial_cache_isolation_and_original_offset_are_in_recipe(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from malody_studio import resident
+    # FakeProcess below is a pure cache test; it must not acquire the user's GPU
+    # lease or shut down an unrelated real resident between live job requests.
+    monkeypatch.setattr(resident,'external_gpu',lambda *args,**kwargs:nullcontext())
     source = tmp_path / 'source.wav'
     sf.write(source, np.zeros((113, 2), dtype=np.float32), 44100, subtype='FLOAT')
     monkeypatch.setattr(separation, 'ROOT', tmp_path)
@@ -143,3 +148,41 @@ def test_trial_cache_isolation_and_original_offset_are_in_recipe(tmp_path, monke
     assert len(requests) == 2
     other = separation.ensure_stems(source, tmp_path / 'trial', cache_scope={**scope, 'origin_source_sample': 101})
     assert other['id'] != trial['id']
+
+
+def test_deployment_accepts_catalog_edits_but_rejects_inference_and_worker_edits(tmp_path, monkeypatch):
+    from malody_studio.deployment_integrity import registry_inference_hash
+    root = tmp_path
+    model_root = root / 'models'
+    model_root.mkdir()
+    registry_path = root / 'malody_studio' / 'separation_models.py'
+    registry_path.parent.mkdir()
+    source = Path(registry.__file__).read_text(encoding='utf-8')
+    registry_path.write_text(source, encoding='utf-8')
+    worker_path = root / 'worker.py'
+    worker_path.write_text('worker')
+    python = root / 'python.exe'
+    python.write_text('runtime')
+    lock = root / 'runtime' / 'roformer-requirements-lock.txt'
+    lock.parent.mkdir()
+    lock.write_text('dependencies')
+    weight = model_root / 'weight'
+    weight.write_bytes(b'checkpoint')
+    manifest = {'adapter_version': registry.ROFORMER_VERSION,
+        'models': {registry.ROFORMER_MODEL: ['weight']},
+        'files': {'weight': {'bytes': weight.stat().st_size, 'sha256': separation.file_hash(weight)}},
+        'dependency_lock_sha256': separation.file_hash(lock),
+        'registry_inference_sha256': registry_inference_hash(registry_path),
+        'code_files': {path.relative_to(root).as_posix(): {'sha256': separation.file_hash(path)} for path in (registry_path, worker_path)}}
+    separation.atomic(model_root / 'manifest.json', manifest)
+    monkeypatch.setattr(separation, 'ROOT', root)
+    monkeypatch.setattr(separation, '_model_paths', lambda _: (model_root, python, worker_path))
+    registry_path.write_text(source.replace("label='Kim MelBand RoFormer'", "label='Updated display label'"), encoding='utf-8')
+    separation.deployment(registry.ROFORMER_MODEL)
+    registry_path.write_text(source.replace("'overlap_count': 4", "'overlap_count': 2"), encoding='utf-8')
+    with pytest.raises(RuntimeError, match='固定代码校验失败'):
+        separation.deployment(registry.ROFORMER_MODEL)
+    registry_path.write_text(source, encoding='utf-8')
+    worker_path.write_text('changed worker')
+    with pytest.raises(RuntimeError, match='固定代码校验失败'):
+        separation.deployment(registry.ROFORMER_MODEL)

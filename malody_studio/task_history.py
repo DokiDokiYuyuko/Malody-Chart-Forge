@@ -2,17 +2,64 @@
 from __future__ import annotations
 
 import os
+import copy
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .advanced import identifier, read, version_source_metadata
 
 TERMINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
-TYPES = {'', 'advanced', 'song', 'separation', 'separation_trial'}
+TYPES = {'', 'advanced', 'song', 'separation', 'separation_trial', 'music_analysis'}
 
 
 def _snapshot(job):
     return job.get('options', {}).get('_advanced', {})
+
+
+def history_snapshot(jobs):
+    """Copy list-view fields under the job lock, without frozen inference payloads."""
+    rows = []
+    for job in jobs:
+        row = {key: job[key] for key in ('id', 'title', 'artist', 'status', 'message',
+            'created', 'queue_order', 'error', 'advanced_errors', 'advanced_warnings', 'advanced_revisions',
+            'advanced_reused_revisions', 'stem_set_id', '_generation_region_view') if key in job}
+        row['report'] = {'partial': job.get('report', {}).get('partial', False)}
+        snapshot = _snapshot(job)
+        if snapshot:
+            def select(value, keys):
+                return {key: value[key] for key in keys if key in value}
+            part_keys = ('id', 'name', 'start_sample', 'end_sample')
+            light = select(snapshot, ('task_type', 'batch_id', 'auto_fuse', 'stem_set_id'))
+            light['project'] = select(snapshot.get('project', {}), ('id', 'title', 'artist'))
+            light['segment'] = select(snapshot.get('segment', {}), part_keys)
+            light['member_segments'] = [select(part, part_keys) for part in snapshot.get('member_segments', [])]
+            light['variants'] = [select(v, ('key',)) for v in snapshot.get('variants', [])]
+            light['settings'] = select(snapshot.get('settings', {}), ('source_mode',))
+            for key in ('source', 'input_sources'):
+                if key in snapshot:
+                    source_keys = ('source_id', 'source_role', 'role')
+                    light[key] = ([select(source, source_keys) for source in snapshot[key]]
+                                  if key == 'input_sources' else select(snapshot[key], source_keys))
+            row['options'] = {'_advanced': light}
+        rows.append(copy.deepcopy(row))
+    return rows
+
+
+def _region_jobs(jobs):
+    views=[]
+    for job in jobs:
+        parts=_snapshot(job).get('member_segments')
+        if not parts or job.get('_generation_region_view'):views.append(job);continue
+        for part in parts:
+            view={**job, 'options': {**job.get('options', {}),
+                '_advanced': {**_snapshot(job), 'segment': dict(part)}}}
+            view['_generation_region_view']=True
+            views.append(view)
+    return views
+
+
+def _view_key(job):
+    return (job['id'],_snapshot(job).get('segment',{}).get('id'))
 
 
 def _time(value):
@@ -75,8 +122,11 @@ def _primary_rows(job, rows):
         return [row for row in rows if row['kind'] in ('fusion', 'fusion_candidate')]
     roles = {row['source_role'] for row in _sources(job)}
     if roles in ({'vocals'}, {'accompaniment'}):
-        return [row for row in rows if row['source_role'] in roles and row['kind'] == 'stem_raw']
-    playable = [row for row in rows if row['kind'] in ('rules', 'fast', 'adaptive')]
+        finished=[row for row in rows if row['source_role'] in roles and row['kind'] in ('quality','arranged','rules','fast')]
+        return finished or [row for row in rows if row['source_role'] in roles and row['kind'] == 'stem_raw']
+    playable = [row for row in rows if row['kind'] in ('rules', 'fast', 'adaptive', 'arranged', 'silence', 'quality')]
+    budgeted={row['variant'] for row in playable if row.get('global_budget_applied') or row['kind']!='quality'}
+    playable=[row for row in playable if row['kind']!='quality' or row.get('global_budget_applied') or row['variant'] not in budgeted]
     keys = {row['variant'] for row in playable}
     return playable + [row for row in rows if row['source_role'] not in ('vocals', 'accompaniment')
                        and row['kind'] != 'stem_raw' and row['variant'] not in keys]
@@ -89,7 +139,7 @@ def _latest_variants(jobs):
         for variant in _snapshot(job).get('variants', []):
             slot = (segment.get('id'), segment.get('start_sample'), segment.get('end_sample'), variant['key'])
             attempts[slot] = job['id']
-    return {job['id']: [variant['key'] for variant in _snapshot(job).get('variants', [])
+    return {_view_key(job): [variant['key'] for variant in _snapshot(job).get('variants', [])
                        if attempts.get((_snapshot(job).get('segment', {}).get('id'),
                                         _snapshot(job).get('segment', {}).get('start_sample'),
                                         _snapshot(job).get('segment', {}).get('end_sample'), variant['key'])) == job['id']]
@@ -98,13 +148,14 @@ def _latest_variants(jobs):
 
 def candidate_results(store, project, jobs):
     """Job-owned revision IDs include reused files; historical batch labels do not."""
+    jobs=_region_jobs(jobs)
     pid = project['id']
     current = {segment['id']: segment for segment in project.get('segments', [])}
     variants = {variant['key'] for variant in project.get('variants', [])}
     manifest_versions = [version for segment in project.get('segments', [])
                          for versions in segment.get('versions', {}).values() for version in versions]
     latest = _latest_variants(jobs)
-    results = []
+    results = []; revision_cache = {}
     for job in jobs:
         snapshot = _snapshot(job)
         segment = snapshot.get('segment', {})
@@ -116,13 +167,23 @@ def candidate_results(store, project, jobs):
         rows = []
         for rid in dict.fromkeys(revision_ids):
             try:
-                revision = store.revision(pid, identifier(rid))
+                if rid not in revision_cache:
+                    full = store.revision(pid, identifier(rid))
+                    # Continuous jobs expose the same immutable IDs in every
+                    # region. Keep small readback metadata, not repeated copies
+                    # of full model notes and inference-attempt provenance.
+                    revision_cache[rid] = {key:full[key] for key in
+                        ('id','segment_id','range','variant','kind','stats','created') if key in full}
+                    revision_cache[rid]['source_metadata'] = version_source_metadata(full)
+                    revision_cache[rid]['provenance'] = {key:full['provenance'][key]
+                        for key in ('density_validation','global_budget_applied') if key in full.get('provenance',{})}
+                revision = revision_cache[rid]
             except (ValueError, OSError):
                 continue
             if (revision.get('segment_id') != segment.get('id') or revision.get('range') != expected_range
                     or revision.get('variant') not in {variant['key'] for variant in snapshot.get('variants', [])}):
                 continue
-            metadata = version_source_metadata(revision)
+            metadata = revision['source_metadata']
             part = current.get(revision['segment_id'])
             current_range = bool(part and revision['range'] == [part['start_sample'], part['end_sample']])
             reused = rid in job.get('advanced_reused_revisions', []) or bool(
@@ -132,11 +193,13 @@ def candidate_results(store, project, jobs):
                          'variant': revision['variant'], 'revision_id': rid, 'kind': revision.get('kind'),
                          'source_role': metadata['source_role'], 'source_id': metadata['source_id'],
                          'stem_set_id': metadata.get('stem_set_id'), 'stats': revision.get('stats', {}),
+                         'density_validation':revision.get('provenance',{}).get('density_validation'),
+                         'global_budget_applied':revision.get('provenance',{}).get('global_budget_applied',False),
                          'range': revision['range'], 'current_range': current_range,
                          'adoptable': current_range and revision['variant'] in variants,
                          'job_id': job['id'], 'reused': reused, 'cached': reused,
                          'created': revision.get('created'), 'primary': False,
-                         'current_attempt': revision['variant'] in latest[job['id']]})
+                         'current_attempt': revision['variant'] in latest[_view_key(job)]})
         primary = {row['revision_id'] for row in _primary_rows(job, rows)}
         for row in rows:
             row['primary'] = row['revision_id'] in primary and row['current_attempt']
@@ -149,7 +212,11 @@ def _job_summary(job, rows, latest_variants=None):
     segment = snapshot.get('segment', {})
     raw_status = job.get('status', 'interrupted')
     status = raw_status
-    errors = list(job.get('advanced_errors') or [])
+    # Non-fatal notices (e.g. an empty contribution of a silent stem) are never failures.
+    notices = list(job.get('advanced_warnings') or [])
+    errors = []
+    for item in job.get('advanced_errors') or []:
+        (notices if isinstance(item, dict) and item.get('non_fatal') else errors).append(item)
     if job.get('error'):
         errors.append({'error': job['error']})
     chosen = [variant['key'] for variant in snapshot.get('variants', [])]
@@ -174,8 +241,10 @@ def _job_summary(job, rows, latest_variants=None):
             'range': [segment.get('start_sample'), segment.get('end_sample')] if segment else None,
             'result_count': len(rows), 'primary_result_count': sum(row['primary'] for row in rows),
             'error_count': len(errors), 'errors': errors, 'error': error,
+            'warning_count': len(notices), 'warnings': notices,
             'stem_set_id': job.get('stem_set_id') or snapshot.get('stem_set_id'),
-            'source_label': _source_label(job), 'input_sources': _sources(job), 'auto_fuse': _auto_fuse(job)}
+            'source_label': _source_label(job), 'input_sources': _sources(job), 'auto_fuse': _auto_fuse(job),
+            'density_validation':[row.get('density_validation') for row in rows if row['primary']]}
 
 
 def _counts(summaries):
@@ -222,15 +291,16 @@ def _manifest_jobs(store, pid, bid, jobs):
 
 def batch_detail(store, pid, bid, jobs):
     project = store.load(identifier(pid))
-    members = _manifest_jobs(store, pid, bid, jobs)
+    members = _region_jobs(_manifest_jobs(store, pid, bid, jobs))
     results = candidate_results(store, project, members)
     latest = _latest_variants(members)
-    summaries = [_job_summary(job, [row for row in results if row['job_id'] == job['id']], latest[job['id']]) for job in members]
+    summaries = [_job_summary(job, [row for row in results if row['job_id'] == job['id'] and row['segment_id']==_snapshot(job).get('segment',{}).get('id')], latest[_view_key(job)]) for job in members]
     counts = _counts(summaries)
     return {'id': bid, 'project_id': pid, 'title': project['title'], 'status': _status(counts),
             'counts': counts, 'jobs': summaries, 'results': results,
             'created': min((job.get('created', '') for job in members), key=_time),
-            'source_label': _source_label(members[0]), 'auto_fuse': _auto_fuse(members[0])}
+            'source_label': _source_label(members[0]), 'auto_fuse': _auto_fuse(members[0]),
+            'model_job_count':len({job['id'] for job in members})}
 
 
 def _metadata(record_id, members):
@@ -248,6 +318,7 @@ def _metadata(record_id, members):
 
 def _record(store, record_id, members):
     record = _metadata(record_id, members)
+    members=_region_jobs(members)
     results = []
     if record['type'] == 'advanced':
         try:
@@ -255,7 +326,7 @@ def _record(store, record_id, members):
         except (ValueError, OSError):
             pass
     latest = _latest_variants(members)
-    summaries = [_job_summary(job, [row for row in results if row['job_id'] == job['id']], latest[job['id']]) for job in members]
+    summaries = [_job_summary(job, [row for row in results if row['job_id'] == job['id'] and row['segment_id']==_snapshot(job).get('segment',{}).get('id')], latest[_view_key(job)]) for job in members]
     counts = _counts(summaries)
     record.update(created_at=record['created'], status=_status(counts), counts=counts, jobs=summaries,
                   section_count=len({row['segment_id'] for row in summaries if row['segment_id']}),
@@ -263,7 +334,7 @@ def _record(store, record_id, members):
                   input_sources=_sources(members[0]), success_count=counts['completed'],
                   failed_count=counts['failed'] + counts['interrupted'], partial_count=counts['partial'],
                   result_count=len(results), primary_result_count=sum(row['primary'] for row in results),
-                  stem_set_id=summaries[0]['stem_set_id'])
+                  stem_set_id=summaries[0]['stem_set_id'],model_job_count=len({job['id'] for job in members}))
     if record['type'] == 'song':
         record['result_target'] = {'type': 'job', 'job_id': members[0]['id']}
     else:
@@ -332,8 +403,6 @@ def open_folder(store, root, jobs, payload):
         raise ValueError('结果目录越过项目输出目录')
     if not target.is_dir():
         raise ValueError('结果目录不存在')
-    opener = getattr(os, 'startfile', None)
-    if opener is None:
-        raise RuntimeError('当前系统不支持打开本地文件夹')
-    opener(str(target))
+    from .folder_open import open_registered_directory
+    open_registered_directory(target)
     return {'opened': True, 'record_id': record_id, 'job_id': job_id}

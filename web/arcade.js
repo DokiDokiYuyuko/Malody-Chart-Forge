@@ -162,7 +162,8 @@
     pressed.delete(index);
     const activeHold = held.get(index); if (!activeHold || state !== 'playing' || !clockValid) return;
     const note = activeHold.note; if (note.tail) return;
-    const delta = inputTime(event) - note.end;
+    const releasedAt = inputTime(event), delta = releasedAt - note.end;
+    if (delta < -windows.good || delta > windows.good) note.failedAt = releasedAt;
     if (delta < -windows.good || delta > windows.good) mark('Miss', note, true); else mark(gradeFor(delta), note, true);
     note.holding = false; held.delete(index);
   }
@@ -300,6 +301,32 @@
     if (state === 'playing' || state === 'countdown') pause();
     else if (state === 'paused' || state === 'ready') begin();
   }
+  // A transport jump starts a fresh judgment interval. Heads before the new
+  // clock (including their LN tails) are retired without scoring or misses.
+  function seek(positionMs) {
+    if (!active || !chartInfo || !Number.isFinite(positionMs) || state === 'loading' || state === 'error') return false;
+    const playing = state === 'playing';
+    const target = Math.max(0, Math.min(Number.isFinite(audio.duration) ? audio.duration * 1000 : Infinity, positionMs));
+    try { audio.currentTime = target / 1000; } catch { return false; }
+    clearTimeout(countdownTimer); countdownTimer = 0;
+    cancelAnimationFrame(frame); frame = 0;
+    notes = readChart(chartInfo.chart);
+    const judgeTime = target - (autoplay ? 0 : currentOffset());
+    for (const note of notes) if (note.start < judgeTime) { note.head = true; note.tail = true; }
+    autoCursor = notes.findIndex(note => !note.head); if (autoCursor < 0) autoCursor = notes.length;
+    held.clear(); pressed.clear(); effects.clear(); autoReleaseAt.fill(0);
+    counts = {Perfect: 0, Great: 0, Good: 0, Miss: 0}; combo = maxCombo = 0;
+    renderCounts(); resetFeedback(); endedAtPerf = 0; frozenMediaMs = target; clockValid = false;
+    if (!playing) {
+      if (state === 'finished') resetOverlay();
+      state = 'paused'; $('arcade-overlay').dataset.countdown = 'false'; $('arcade-overlay').hidden = false;
+      $('arcade-overlay-title').textContent = '已定位'; $('arcade-overlay-copy').textContent = '继续后从这里重新计分。';
+      $('arcade-start').hidden = false; $('arcade-pause').hidden = false; $('arcade-pause').textContent = '继续 Esc'; $('arcade-retry').hidden = true;
+    } else if (playable()) {
+      setAnchor(target); frame = requestAnimationFrame(tick);
+    }
+    draw(target); return true;
+  }
   async function begin() {
     if (!active || !chartInfo || state === 'loading' || state === 'countdown' || state === 'playing') return;
     const resume = state === 'paused';
@@ -374,8 +401,8 @@
     dialog.hidden = true; activeHost.classList.remove('arcade-active'); speedSource = null; callbacks = {};
     if (wasActive && typeof onClose === 'function') onClose();
   }
-  $('arcade-open').addEventListener('click', () => open(window.activeArcadeJob, $('arcade-open').dataset.chartId));
-  $('arcade-autoplay').addEventListener('click', () => open(window.activeArcadeJob, $('arcade-open').dataset.chartId, {autoplay: true}));
+  $('arcade-open').addEventListener('click', () => open(window.activeArcadeJob, $('arcade-open').dataset.chartId,{onFrame:(snapshot,geometry)=>window.SimpleSpectrum?.render(snapshot,geometry,5000/Number($('preview-speed').value))}));
+  $('arcade-autoplay').addEventListener('click', () => open(window.activeArcadeJob, $('arcade-open').dataset.chartId, {autoplay:true,onFrame:(snapshot,geometry)=>window.SimpleSpectrum?.render(snapshot,geometry,5000/Number($('preview-speed').value))}));
   $('arcade-start').addEventListener('click', begin); $('arcade-retry').addEventListener('click', begin);
   $('arcade-pause').addEventListener('click', togglePause); $('arcade-close').addEventListener('click', close); $('arcade-exit').addEventListener('click', close);
   $('arcade-offset').value = localStorage.getItem('startrail.arcade-offset') || '0';
@@ -415,6 +442,6 @@
   new ResizeObserver(() => { resize(); if (state !== 'playing') draw(currentSongTime()); }).observe(canvas);
   window.addEventListener('gameappearancechange', () => { effects.clear(); if (active && state !== 'playing') draw(currentSongTime()); });
   window.addEventListener('appearancechange', () => { if (active && state !== 'playing') draw(currentSongTime()); });
-  window.ChartArcade = {open, close, isActive: () => active, state: () => state};
+  window.ChartArcade = {open, close, seek, position: currentSongTime, isActive: () => active, state: () => state};
   document.querySelectorAll('.topbar nav button').forEach(button => button.addEventListener('click', () => { if (active) close(); }));
 })();

@@ -8,27 +8,37 @@ import imageio_ffmpeg
 def ffmpeg():
     return imageio_ffmpeg.get_ffmpeg_exe()
 
-def convert(source, directory):
+def convert(source, directory, tail_trim_enabled=False):
     directory = Path(directory)
     directory.mkdir(exist_ok=True)
     wave = directory / 'analysis.wav'
-    # No trimming, normalization or speed changes: the source time axis is retained.
+    from .audio_bounds import detect_tail, SR
+    import json
+    original = directory / 'source.wav'
+    result = subprocess.run([ffmpeg(),'-hide_banner','-loglevel','error','-y','-i',str(source),'-vn','-ar',str(SR),'-c:a','pcm_f32le',str(original)],capture_output=True,text=True,timeout=120)
+    if result.returncode:raise ValueError('音频解码失败：'+result.stderr[-300:])
+    trim = {**detect_tail(original),'enabled':tail_trim_enabled}
+    data, _ = sf.read(original,dtype='float32',always_2d=True)
+    if not 5 <= len(data)/SR <= 600:raise ValueError('请上传 5 秒至 10 分钟的音乐')
+    end = trim['cutoff_sample'] if tail_trim_enabled else len(data)
+    if not end or not np.isfinite(data).all() or np.max(np.abs(data)) < 1e-5:raise ValueError('音频无有效声音')
+    retained = directory / 'retained.wav'
+    sf.write(retained,data[:end],SR,subtype='FLOAT')
+    (directory/'tail-analysis.json').write_text(json.dumps(trim),encoding='utf-8')
     for destination, options in [(wave, ['-ac', '1', '-ar', '22050', '-c:a', 'pcm_f32le']),
                                   (directory / 'audio.ogg', ['-ac', '2', '-ar', '44100', '-c:a', 'libvorbis', '-q:a', '5'])]:
-        result = subprocess.run([ffmpeg(), '-hide_banner', '-loglevel', 'error', '-y', '-i', str(source),
+        result = subprocess.run([ffmpeg(), '-hide_banner', '-loglevel', 'error', '-y', '-i', str(retained),
                                  '-vn', *options, str(destination)], capture_output=True, text=True, timeout=120)
         if result.returncode:
             raise ValueError('音频解码失败，请使用有效的 MP3、WAV、FLAC、M4A 或 OGG 文件。' + result.stderr[-300:])
     y, sr = sf.read(wave, dtype='float32')
-    duration = len(y) / sr
-    if not 5 <= duration <= 600:
-        raise ValueError('请上传 5 秒至 10 分钟的音乐')
+    duration = end / SR
     if not np.isfinite(y).all() or np.max(np.abs(y)) < 1e-5:
         raise ValueError('音频无有效声音')
     encoded = sf.info(directory / 'audio.ogg')
     if encoded.format != 'OGG' or encoded.subtype != 'VORBIS':
         raise ValueError('游戏音频必须为 OGG Vorbis')
-    if abs(encoded.duration - duration) > 0.02:
+    if abs(encoded.frames - end) > 1:
         raise ValueError('转换后音频时间轴发生变化')
     return y, sr, duration, directory / 'audio.ogg'
 

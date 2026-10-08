@@ -295,7 +295,7 @@ def run_review(store,pid,task_id,provider_factory=Provider):
             r=store.revision(pid,rid)
             if r['variant']==base['variant']:examples.append({'variant':r['variant'],'events':r['events'][:64],'source':'用户认可示例'})
             if len(examples)>=3:break
-        skill=(ROOT/'skills'/'malody-chart-review'/'SKILL.md').read_text(encoding='utf-8')
+        skill=(Path(__file__).parent/'prompts'/'chart-review.txt').read_text(encoding='utf-8')
         used_groups=[];tool_cap=config['capabilities'].get('tools',False)
         ranges=list(windows(base['events'],task['start_ms'],task['end_ms']));task['windows']=ranges
         for wi,(a,b) in enumerate(ranges):

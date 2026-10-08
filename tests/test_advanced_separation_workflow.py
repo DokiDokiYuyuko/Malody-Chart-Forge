@@ -15,6 +15,13 @@ def setup(tmp_path, monkeypatch):
     p = store.create(source,'独立测试','')
     monkeypatch.setattr(advanced_api,'store',store)
     monkeypatch.setattr(server,'ensure_engine',lambda *_:None)
+    # This suite exercises the frozen legacy stem route; direct V32 has separate coverage.
+    from malody_studio import nps_star_calibration, advanced_plans
+    monkeypatch.setattr(nps_star_calibration, 'freeze_policy', lambda: None)
+    from malody_studio import section_plan
+    monkeypatch.setattr(advanced_plans, 'get_or_build_plan',
+        lambda current_store, current_project, settings: section_plan.build_plan(
+            current_store.directory(current_project['id'])/'source.wav',settings,current_project.get('tempo',{})))
     calls=[]
     monkeypatch.setattr(server,'enqueue_job',lambda options,source_ref: calls.append((copy.deepcopy(options),source_ref)) or {'id':'a'*32})
     app=FastAPI();app.include_router(advanced_api.router)
@@ -45,7 +52,7 @@ def test_separation_empty_project_is_independent_and_named(setup,tmp_path,monkey
     monkeypatch.setattr(separation_tasks,'ROOT',tmp_path)
     monkeypatch.setattr(separation_tasks,'ensure_stems',lambda *_:copy.deepcopy(m))
     # No chart inference or fusion function may be called by this independent stage.
-    monkeypatch.setattr(stem_generation,'fuse_revisions',lambda *_:pytest.fail('separation fused charts'))
+    monkeypatch.setattr(stem_generation,'fuse_revisions',lambda *_,**__:pytest.fail('separation fused charts'))
     result=separation_tasks.run(store.directory(p['id'])/'source.wav',tmp_path/'job',options,lambda *_:None)
     assert result['stem_set_id']==m['id'] and 'advanced_result' not in result
     assert 'htdemucs' in result['stem_set']['name'] and '全曲' in result['stem_set']['summary']
@@ -147,6 +154,7 @@ def test_waveform_detail_and_anchor_patch_preserve_existing_notes(setup):
 def test_single_stem_runner_never_separates_or_fuses_and_reuses_raw(setup,tmp_path,monkeypatch):
     from malody_studio import advanced_generation
     store,p,calls,client=setup;m=stems(store,p)
+    p=store.update(p['id'],{'patterns':['balanced'],'difficulties':['easy']})
     p=store.add_segment(p['id'],{'start_sample':0,'end_sample':44100});sid=p['segments'][0]['id']
     response=client.post(f"/api/advanced/projects/{p['id']}/segments/{sid}/generate",json={
         'source_id':m['id']+':vocals','stem_set_id':m['id'],'auto_fuse':False,'variants':['balanced--easy']})
@@ -154,7 +162,7 @@ def test_single_stem_runner_never_separates_or_fuses_and_reuses_raw(setup,tmp_pa
     options=calls[-1][0];generated=[]
     monkeypatch.setattr(stem_generation,'ROOT',tmp_path)
     monkeypatch.setattr(stem_generation,'ensure_stems',lambda *_:pytest.fail('explicit generation separated'))
-    monkeypatch.setattr(stem_generation,'fuse_revisions',lambda *_:pytest.fail('explicit generation fused'))
+    monkeypatch.setattr(stem_generation,'fuse_revisions',lambda *_,**__:pytest.fail('explicit generation fused'))
     def infer(source,directory,options,progress):
         snapshot=options['_advanced'];generated.append(snapshot['source']['source_role'])
         return {'advanced_result':[{'variant':'balanced--easy','events':[{'id':'note','start_ms':100,'end_ms':None,'lane':0}],
@@ -172,6 +180,88 @@ def test_single_stem_runner_never_separates_or_fuses_and_reuses_raw(setup,tmp_pa
     second=stem_generation.run(store.directory(p['id'])/'source.wav',retry,options,lambda *_:None)
     assert generated==['vocals'] and second['reused_revisions']==saved
     assert second['advanced_result']==[]
+
+
+def test_dual_missing_timing_recovers_once_and_frozen_retry_reuses_completed_source(setup,tmp_path,monkeypatch):
+    from malody_studio import advanced_generation
+    store,p,calls,client=setup;m=stems(store,p)
+    p=store.update(p['id'],{'difficulties':['expert']})
+    p=store.add_segment(p['id'],{'start_sample':0,'end_sample':44100})
+    response=client.post(f"/api/advanced/projects/{p['id']}/segments/{p['segments'][0]['id']}/generate",json={
+        'source_id':'vocals_accompaniment','stem_set_id':m['id'],'auto_fuse':True})
+    assert response.status_code==200,response.text
+    options=calls[-1][0];options['_advanced']['disable_density_retry']=True;generated=[];recover=False
+    monkeypatch.setattr(stem_generation,'ROOT',tmp_path)
+    monkeypatch.setattr(stem_generation,'_audio_evidence',lambda *_:None)
+    def fused(*_,**kwargs):
+        assert kwargs['selection_policy']==options['_advanced']['candidate_policy']['selection_policy']
+        assert kwargs['audio_vote_cap']==options['_advanced']['candidate_policy']['audio_vote_cap']
+        return {'events':[],'provenance':{}}
+    monkeypatch.setattr(stem_generation,'fuse_revisions',fused)
+    def infer(source,directory,options,progress):
+        snapshot=options['_advanced'];role=snapshot['source']['source_role'];generated.append((role,snapshot['project'].get('timing_rescue',{}).get('source')))
+        if role=='vocals':
+            if not recover or snapshot['project'].get('timing_rescue',{}).get('source')!='paired_stem_model_output':
+                raise ValueError('模型未生成节拍，项目参考恢复失败；请确认 BPM 后重试')
+            assert snapshot['project']['timing_rescue']['authorized_missing_timing'] and not snapshot['project']['timing_rescue']['confirmed']
+        return {'advanced_result':[{'variant':'balanced--expert','events':[{'id':'note','start_ms':100,'end_ms':None,'lane':0}],
+                    'settings':snapshot['settings'],'provenance':{'serialization_tempo':{'points':[[0,110]],'source':'model_output'}}}]}
+    monkeypatch.setattr(advanced_generation,'run',infer)
+    original=tmp_path/'outputs'/('1'*32);original.mkdir(parents=True)
+    before=copy.deepcopy(options)
+    partial=stem_generation.run(store.directory(p['id'])/'source.wav',original,options,lambda *_:None)
+    assert len([x for x in generated if x[0]=='vocals'])==2  # ordinary plus one bounded rescue
+    assert len(partial['advanced_result'])==1 and partial['errors']
+    assert partial['timing_recoveries'][0]['status']=='failed'
+    advanced_api.commit_generated(options,partial)
+    advanced.atomic(original/'queue-worker.json',{'options':options})
+    advanced.atomic(original/'worker-result.json',partial)
+    recover=True;generated.clear();retry=tmp_path/'outputs'/('2'*32);retry.mkdir()
+    options['_advanced']['retry_of']=original.name
+    result=stem_generation.run(store.directory(p['id'])/'source.wav',retry,options,lambda *_:None)
+    assert generated==[('vocals','paired_stem_model_output')]
+    assert result['errors']==[] and result['timing_recoveries'][0]['status']=='completed'
+    assert [r['kind'] for r in result['advanced_result']]==['stem_raw','fusion']
+    assert result['reused_revisions']==[partial['advanced_result'][0]['id']]
+    assert result['advanced_result'][0]['provenance']['paired_timing_recovery']['confirmed'] is False
+    assert options['_advanced']['project']==before['_advanced']['project']
+
+
+@pytest.mark.parametrize('clock_available',[True,False])
+def test_two_missing_model_timings_use_one_original_clock_or_remain_failed(setup,tmp_path,monkeypatch,clock_available):
+    from malody_studio import advanced_generation, paired_timing
+    store,p,calls,client=setup;m=stems(store,p)
+    p=store.add_segment(p['id'],{'start_sample':0,'end_sample':44100})
+    response=client.post(f"/api/advanced/projects/{p['id']}/segments/{p['segments'][0]['id']}/generate",json={
+        'source_id':'vocals_accompaniment','stem_set_id':m['id'],'auto_fuse':True})
+    assert response.status_code==200,response.text
+    options=calls[-1][0];options['_advanced']['disable_density_retry']=True;attempts=[];clocks=[]
+    monkeypatch.setattr(stem_generation,'ROOT',tmp_path)
+    monkeypatch.setattr(stem_generation,'_audio_evidence',lambda *_:None)
+    monkeypatch.setattr(stem_generation,'fuse_revisions',lambda *_,**__:{'events':[],'provenance':{}})
+    def original_clock(original,directory,project,segment,progress,*,authorized_missing_timing=False):
+        assert authorized_missing_timing
+        clocks.append(True)
+        if not clock_available:raise ValueError('原曲模型也没有有效节拍，请确认 BPM 后重试')
+        return {**project,'timing_rescue':{'source':'original_native_timing_model','authorized_missing_timing':True,'confirmed':False}}, {'source':'original_native_timing_model','attempts':1,'confirmed':False}
+    monkeypatch.setattr(paired_timing,'original_recovery_project',original_clock)
+    def infer(source,directory,options,progress):
+        snap=options['_advanced'];attempts.append(snap['source']['source_role'])
+        if snap['project'].get('timing_rescue',{}).get('source')!='original_native_timing_model':
+            raise ValueError('模型未生成节拍，项目参考恢复失败；请确认 BPM 后重试')
+        return {'advanced_result':[{'variant':'balanced--hard','events':[], 'settings':snap['settings'],'provenance':{}}]}
+    monkeypatch.setattr(advanced_generation,'run',infer)
+    directory=tmp_path/'job';directory.mkdir()
+    if clock_available:
+        result=stem_generation.run(store.directory(p['id'])/'source.wav',directory,options,lambda *_:None)
+        assert result['errors']==[] and [r['kind'] for r in result['advanced_result']]==['stem_raw','stem_raw','fusion']
+        assert len(result['timing_recoveries'])==2 and all(r['attempts']==1 for r in result['timing_recoveries'])
+        assert attempts==['vocals','accompaniment','vocals','accompaniment']
+    else:
+        with pytest.raises(ValueError,match='均失败'):
+            stem_generation.run(store.directory(p['id'])/'source.wav',directory,options,lambda *_:None)
+        assert attempts==['vocals','accompaniment']
+    assert len(clocks)==1
 
 
 def test_separation_queue_is_exclusive_fifo_and_paused_tasks_do_not_run(tmp_path,monkeypatch):
@@ -285,7 +375,7 @@ def test_unavailable_separation_model_is_rejected_on_retry(setup,tmp_path,monkey
 
 
 @pytest.mark.parametrize('dynamic',[False,True])
-def test_v32_stem_uses_uncertain_original_timing_when_no_points(setup,tmp_path,monkeypatch,dynamic):
+def test_v32_stem_does_not_force_uncertain_original_timing(setup,tmp_path,monkeypatch,dynamic):
     from malody_studio import advanced_generation,mapperatorinator,section_plan
     from malody_studio.charts import Note
     store,p,calls,client=setup;m=stems(store,p)
@@ -293,9 +383,8 @@ def test_v32_stem_uses_uncertain_original_timing_when_no_points(setup,tmp_path,m
     descriptor=separation.resolve_source(store,p['id'],m['id']+':vocals')
     before=copy.deepcopy(p['tempo']);captured=[]
     def infer(source,folder,options,progress):
-        reference=Path(options['timing_reference']);text=reference.read_text(encoding='utf-8')
-        assert '[TimingPoints]' in text and '0.0,500.0,4,1,0,100,1,0' in text
-        captured.append(reference)
+        assert 'timing_reference' not in options and 'timing_fallback_reference' not in options
+        captured.append(True)
         return {r['key']:([Note(100,0)],[[0,120]]) for r in options['_advanced_presets']},{}
     from pathlib import Path
     monkeypatch.setattr(mapperatorinator,'generate',infer)
@@ -306,17 +395,16 @@ def test_v32_stem_uses_uncertain_original_timing_when_no_points(setup,tmp_path,m
     result=advanced_generation.run(descriptor['path'],tmp_path/('dynamic' if dynamic else 'static'),{'_advanced':snapshot},lambda *_:None)
     assert captured
     reference=result['advanced_result'][0]['provenance']['timing_reference']
-    assert reference['source']=='original_audio_analysis' and reference['uncertain'] is True
-    assert reference['points']==[[0.,120.]] and p['tempo']==before
+    assert reference is None and p['tempo']==before
 
 
 def test_timing_reference_never_invents_bpm_and_keeps_confirmed_points():
     from malody_studio.advanced_generation import timing_reference_info
     for bpm in (None,0,1000,float('nan')):
         with pytest.raises(ValueError):timing_reference_info({'tempo':{'bpm':bpm}})
-    confirmed={'tempo':{'points':[[0,150],[27318,240]],'reference_source':'imported_chart','uncertain':True}}
+    confirmed={'tempo':{'points':[[0,150],[27318,240]],'reference_source':'imported_chart','uncertain':False,'manual':True}}
     result=timing_reference_info(confirmed)
-    assert result['points']==confirmed['tempo']['points'] and result['source']=='imported_chart' and result['uncertain'] is True
+    assert result['points']==confirmed['tempo']['points'] and result['source']=='imported_chart' and result['uncertain'] is False
 
 
 def test_version_summary_batch_sources_backfill_without_mutating_revisions(setup):

@@ -34,6 +34,25 @@ def test_half_open_ranges_and_overlap(project):
     ev,_=owned([a.Note(1000,0)],0,1000,8000);assert ev==[]
     ev,_=owned([a.Note(1000,0)],1000,1250,8000);assert len(ev)==1
 
+
+def test_conflicting_raw_model_heads_are_inactive_evidence_and_never_playable(project):
+    store,p=project;p,s=segment(store,p,0,2)
+    raw=[event(100,0,800,id='model-ln'),event(300,0,id='model-tap')]
+    policy={'raw_head_policy':'native-model-heads-v1'}
+    revision=store.add_revision(p['id'],s['id'],'balanced--easy',raw,p['settings'],'model_raw',policy)
+    assert revision['events']==raw
+    assert 'balanced--easy' not in store.load(p['id'])['segments'][0]['active']
+    with pytest.raises(ValueError,match='占轨'):
+        store.select(p['id'],s['id'],'balanced--easy',revision['id'])
+    with pytest.raises(ValueError,match='占轨'):
+        store.local_chart(p['id'],revision['id'])
+    with pytest.raises(ValueError,match='占轨'):
+        store.add_revision(p['id'],s['id'],'balanced--easy',raw,p['settings'],'rules',policy)
+    playable=[{**raw[0],'end_ms':250},raw[1]]
+    child=store.add_revision(p['id'],s['id'],'balanced--easy',playable,p['settings'],'rules',policy)
+    assert store.select(p['id'],s['id'],'balanced--easy',child['id'])['segments'][0]['active']['balanced--easy']==child['id']
+    assert store.revision(p['id'],revision['id'])['events']==raw
+
 def test_revision_is_candidate_until_selected(project):
     store,p=project;p,s=segment(store,p,0,2);r=rev(store,p,s,[event(500)]);candidate=rev(store,p,s,[event(700)],'rules')
     current=store.load(p['id']);assert current['segments'][0]['active']['balanced--easy']==r['id']
@@ -43,6 +62,56 @@ def test_revision_is_candidate_until_selected(project):
     store.edit_segment(p['id'],s['id'],{'end_sample':3*a.SR})
     assert store.load(p['id'])['segments'][0]['active']=={}
     with pytest.raises(ValueError,match='范围'):store.select(p['id'],s['id'],'balanced--easy',r['id'])
+
+
+def test_uncertain_detection_keeps_model_timing_playable_and_exportable(project,monkeypatch):
+    import zipfile
+    from malody_studio import music_timing, advanced_generation
+    store,p=project;p,s=segment(store,p,0,2)
+    _,clock=music_timing.source_contract(store.directory(p['id']),p)
+    uncertain=music_timing.timing_map({'beat_samples':[],'downbeat_samples':[]},clock)
+    assert not uncertain['eligibility']['v32']
+    provenance={'timing_map':uncertain,'serialization_tempo':{'points':[[137.25,145]],'source':'model_output'}}
+    notes=[event(187.321,0,786.456),event(1499.876,1)]
+    r=store.add_revision(p['id'],s['id'],'balanced--easy',notes,p['settings'],'arranged',provenance)
+    frozen=store.revision(p['id'],r['id'])
+    before=json.dumps(frozen,sort_keys=True)
+    config={};advanced_generation.attach_timing_reference(config,store.directory(p['id']),{**p,'timing_map':uncertain},{})
+    assert 'timing_reference' not in config and 'timing_fallback_reference' not in config
+    monkeypatch.setattr('malody_studio.charts.time.time',lambda:1000000000.)
+    local=store.local_chart(p['id'],r['id'])
+    restored=a.chart_events(local['chart'])
+    assert local['chart']['time']==[{'beat':[0,0,1],'bpm':120.}]
+    assert max(abs(left['start_ms']-right['start_ms']) for left,right in zip(notes,restored))<1
+    store.update(p['id'],{'tempo':{'bpm':180,'points':[[0,180]],'manual':True}})
+    monkeypatch.setattr('malody_studio.charts.time.time',lambda:1000000010.)
+    assert store.local_chart(p['id'],r['id'])['chart']==local['chart']
+    result=a.assemble(store,p['id'],1.5)
+    folder=store.directory(p['id'])/'assemblies'/result['id']
+    with zipfile.ZipFile(folder/'malody-4k.mcz') as archive:
+        assert archive.testzip() is None
+        chart=json.loads(archive.read('0/balanced--easy.mc'))
+        assert chart['meta']['song']['title']==p['title']
+        assert chart['meta']['version']=='Balanced Easy'
+        assert chart['time']==[{'beat':[0,0,1],'bpm':120.}] and chart['effect']==[]
+        assert '0/'+chart['note'][-1]['sound'] in archive.namelist()
+    restored=a.chart_events(chart)
+    assert max(abs(left['start_ms']+1500-right['start_ms']) for left,right in zip(notes,restored))<1
+    assert sf.info(folder/'audio.ogg').frames==round(3.5*a.SR)
+    assert json.dumps(store.revision(p['id'],r['id']),sort_keys=True)==before
+
+
+def test_manual_nonzero_anchor_is_preserved_without_promoting_uncertain_map(project):
+    from malody_studio import music_timing, advanced_generation
+    store,p=project
+    p=store.update(p['id'],{'tempo':{'points':[[137.123,145]]}},p['revision'])
+    _,clock=music_timing.source_contract(store.directory(p['id']),p)
+    timing=music_timing.timing_map({'beat_samples':[],'downbeat_samples':[]},clock)
+    reference=advanced_generation.timing_reference_info({**p,'timing_map':timing})
+    assert reference['source']=='user_confirmed' and reference['points']==[[137.123,145.]]
+    assert not timing['eligibility']['v32'] and 'meter' not in reference
+    path=advanced_generation.write_reference(store.directory(p['id'])/'manual.osu',{**p,'timing_map':timing})
+    assert '137.123,' in path.read_text(encoding='utf-8')
 
 def test_split_inherits_head_ownership_and_long_tail(project):
     store,p=project;p,s=segment(store,p,0,3);r=rev(store,p,s,[event(500,0,2500),event(1000,1),event(2000,2)])
@@ -82,7 +151,7 @@ def test_assembly_real_ogg_roundtrip_variable_bpm_and_missing(project):
     assert sf.info(directory/'audio.ogg').frames==report['samples']
     import zipfile
     with zipfile.ZipFile(directory/'malody-4k.mcz') as z:
-        assert '0/' in z.namelist() and '0/audio.ogg' in z.namelist()
+        assert '0/' not in z.namelist() and '0/audio.ogg' in z.namelist()
         names=[n for n in z.namelist() if n.endswith('.mc')];assert len(names)==1
         chart=json.loads(z.read(names[0]));restored=a.chart_events(chart)
         for old,new in zip(report['preview']['balanced--easy'],restored):
@@ -279,7 +348,9 @@ def test_v32_receives_native_segment_and_shared_timing(project,tmp_path,monkeypa
         return {'easy':([a.Note(2100,1)],[[0,120],[2000,180]])},{}
     monkeypatch.setattr(mapperatorinator,'generate',generate)
     result=generation.run(store.directory(p['id'])/'source.wav',tmp_path/'v32',{'_advanced':{'project':p,'segment':s,'settings':{**p['settings'],'dynamic_enabled':False},'variants':p['variants']}},lambda *_:None)
-    assert calls[0]['start_time']==2000 and calls[0]['end_time']==3000
+    assert calls[0]['start_time']==0 and calls[0]['end_time']==7000
+    assert calls[0]['_advanced_presets'][0]['core_start_time']==2000
+    assert calls[0]['_advanced_presets'][0]['core_end_time']==3000
     assert Path(calls[0]['timing_reference']).is_file()
     assert result['advanced_result'][0]['events'][0]['start_ms']==2100
 
@@ -326,7 +397,11 @@ def test_advanced_retry_retains_snapshot_and_source(project,monkeypatch):
     monkeypatch.setattr(server,'ensure_engine',lambda _:None)
     monkeypatch.setattr(server,'enqueue_job',lambda options,ref:received.append((options,ref)) or {'id':'retry'})
     assert server.regenerate_job(job['id'])['id']=='retry'
-    assert received[0][0]['_advanced']==snapshot and received[0][1]['path'].endswith('/source.wav')
+    retried=received[0][0]['_advanced']
+    assert retried['retry_of']==job['id']
+    assert {k:v for k,v in retried.items() if k not in ('retry_of','original_source')}==snapshot
+    assert Path(retried['original_source']['path']).is_file()
+    assert 'retry_of' not in snapshot and received[0][1]['path'].endswith('/source.wav')
 
 def test_cross_window_hold_keeps_unchanged_tail_and_rejects_tail_edits(project):
     store,p=project;p,s=segment(store,p,0,5);base=rev(store,p,s,[event(500,0,4000,id='n1')])
@@ -343,7 +418,7 @@ def test_export_uses_complete_original_and_peak_safe_gain_for_a_stem_chart(proje
     source=store.root.parent/'peak-source.wav'
     music=np.column_stack((1.35*np.sin(2*np.pi*440*phase),1.2*np.sin(2*np.pi*660*phase))).astype(np.float32)
     sf.write(source,music,a.SR,subtype='FLOAT')
-    p=store.create(source,'Peak export','');p,s=segment(store,p,0,2)
+    p=store.create(source,'Peak export','');p=store.update(p['id'],{'patterns':['balanced'],'difficulties':['easy']});p,s=segment(store,p,0,2)
     r=store.add_revision(p['id'],s['id'],'balanced--easy',[event(400,0)],a.defaults(),'stem_raw',{'source_role':'vocals','source_id':'frozen-vocals'})
     result=a.assemble(store,p['id'],0)
     directory=store.directory(p['id'])/'assemblies'/result['id']
@@ -357,3 +432,40 @@ def test_export_uses_complete_original_and_peak_safe_gain_for_a_stem_chart(proje
     assert np.corrcoef(encoded.ravel(),(music*processing['gain']).ravel())[0,1]>.999
     assert report['charts'][0]['sources'][0]['revision_id']==r['id']
     assert report['charts'][0]['sources'][0]['source_role']=='vocals'
+
+
+def test_export_identifies_failed_segment_and_rejects_stale_adoption(project):
+    store,p=project;p,s1=segment(store,p,0,2);p,s2=segment(store,p,2,4)
+    r=rev(store,p,s1,[event(500)])
+    rows=a.export_readiness(store.load(p['id']))
+    assert rows[0]['missing']==[{'id':s2['id'],'name':s2['name']}]
+    with pytest.raises(ValueError,match=s2['name']):a.assemble(store,p['id'])
+    r2=rev(store,p,s2,[event(2500)])
+    assert a.export_readiness(store.load(p['id']))[0]['ready']
+    current=store.load(p['id']);current['segments'][1]['end_sample']=5*a.SR;store.save(current)
+    assert not a.export_readiness(store.load(p['id']))[0]['ready']
+    with pytest.raises(ValueError,match='尚未采用有效谱面'):a.assemble(store,p['id'])
+    assert store.revision(p['id'],r2['id'])['events'][0]['start_ms']==2500
+
+
+def test_advanced_retry_is_idempotent_and_refuses_changed_range(project,monkeypatch):
+    from malody_studio import server,advanced_api
+    from fastapi import HTTPException
+    store,p=project;p,part=segment(store,p,0,2)
+    snapshot={'project':copy.deepcopy(p),'segment':copy.deepcopy(part),'settings':p['settings'],'variants':p['variants'],'batch_id':a.uid(),'activate_initial':False}
+    job={'id':a.uid(),'status':'failed','options':{'_advanced':snapshot,'engine':'v32'}};records={job['id']:job};received=[]
+    monkeypatch.setattr(advanced_api,'store',store);monkeypatch.setattr(server,'jobs',records)
+    monkeypatch.setattr(server,'get_job',lambda id:records[id]);monkeypatch.setattr(server,'ensure_engine',lambda _:None)
+    def enqueue(options,ref):
+        id=a.uid();records[id]={'id':id,'status':'queued','options':options};received.append(id);return {'id':id}
+    monkeypatch.setattr(server,'enqueue_job',enqueue)
+    first=server.regenerate_job(job['id']);again=server.regenerate_job(job['id'])
+    assert first['id']==again['id'] and again['reused'] and len(received)==1
+    child_snapshot=records[first['id']]['options']['_advanced']
+    assert child_snapshot['batch_id']!=snapshot['batch_id']
+    assert child_snapshot['retry_parent_submission']=={'batch_id':snapshot['batch_id']}
+    assert records[first['id']]['options']['_advanced']['activate_initial'] is False
+    assert 'retry_of' not in snapshot
+    store.edit_segment(p['id'],part['id'],{'end_sample':3*a.SR})
+    with pytest.raises(HTTPException,match='范围已变化'):server.regenerate_job(job['id'])
+    assert len(received)==1

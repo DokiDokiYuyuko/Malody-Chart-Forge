@@ -19,9 +19,12 @@ def canonical_hash(value):
 
 
 def plan_settings_hash(settings):
-    return canonical_hash({key: settings.get(key) for key in (
+    body = {key: settings.get(key) for key in (
         'engine', 'dynamic_enabled', 'dynamic_strength', 'conditions',
-        'difficulty_rules', 'profile', 'section_granularity')})
+        'difficulty_rules', 'profile', 'section_granularity','bpm_bucket_count','bpm_bucket_range')}
+    if 'nps_ranges' in settings:
+        body['nps_ranges'] = settings['nps_ranges']
+    return canonical_hash(body)
 
 
 def pcm_audio(path):
@@ -38,7 +41,7 @@ def pcm_audio(path):
     return np.ascontiguousarray(data, dtype='<f4')
 
 
-def rhythm_features(data):
+def rhythm_features(data, estimate_beats=True):
     """Activity is independent of BPM; sustained loud sound is not fast rhythm."""
     import librosa
     # Channel power prevents antiphase cancellation; onset is the mean of both
@@ -67,7 +70,9 @@ def rhythm_features(data):
                         'rms': round(float(np.sqrt(np.mean(local ** 2))) if len(local) else 0., 7),
                         'onset_rate': round(count / max(span, 1e-6), 4),
                         'active_fraction': round(active, 5)})
-    # Dynamic tempo estimation is evidence only. No note snapping or forced BPM.
+    if not estimate_beats:
+        return profile, envelope, [], hop / 22050
+    # Retained only for explicitly historical analysis paths.
     dynamic = librosa.feature.tempo(onset_envelope=envelope, sr=22050, hop_length=hop, aggregate=None)
     if len(dynamic) != len(envelope):
         raise ValueError('局部节拍估计时间轴不一致')
@@ -219,7 +224,7 @@ def difficulty_budget(settings, active_duration, activity, evidence):
     return result
 
 
-def build_plan(source_wav, settings, tempo=None):
+def build_plan(source_wav, settings, tempo=None, acoustic=None):
     tempo = tempo or {}
     data = pcm_audio(source_wav)
     source_hash = hashlib.sha256(data.tobytes()).hexdigest()
@@ -227,7 +232,17 @@ def build_plan(source_wav, settings, tempo=None):
     strength = float(settings.get('dynamic_strength', 1.))
     if not math.isfinite(strength) or not 0 <= strength <= 1:
         raise ValueError('动态难度强度须为 0–1')
-    profile, envelope, beats, frame_seconds = rhythm_features(data)
+    if acoustic is None:
+        profile, envelope, beats, frame_seconds = rhythm_features(data)
+    else:
+        import copy
+        from .acoustic_evidence import validate
+        validate(acoustic,{'pcm_sha256':source_hash,'samples':len(data)})
+        profile=copy.deepcopy(acoustic['profile']);frame_seconds=.005
+        envelope=np.zeros(math.ceil(len(data)/SR/frame_seconds)+1)
+        for sample,strength in zip(acoustic['onset_samples'],acoustic['onset_strengths']):
+            envelope[min(len(envelope)-1,round(sample/SR/frame_seconds))]=strength
+        beats=[sample/SR for sample in acoustic.get('beat_estimate_samples',[])]
     active_rates = [p['onset_rate'] for p in profile if p['active_fraction'] > .1]
     median_rate = float(np.median(active_rates)) if active_rates else 0.
     scale = max(2., float(np.percentile(active_rates, 90)) - float(np.percentile(active_rates, 10))) if active_rates else 2.

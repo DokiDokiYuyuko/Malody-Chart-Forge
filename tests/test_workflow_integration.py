@@ -67,7 +67,7 @@ def test_rhythm_api_uses_shared_cache_for_analysis_and_overrides(project,monkeyp
     with TestClient(app) as client:
         url='/api/advanced/projects/'+p['id']+'/section-plans'
         first=client.post(url,json={})
-        second=client.post(url,json={'settings':{'difficulty_rules':{'medium':{'rate':7}}}})
+        second=client.post(url,json={'settings':{'nps_ranges':{'medium':{'min':6,'max':8}}}})
     assert first.json()=={'id':'cache-result','marker':5.}
     assert second.json()=={'id':'cache-result','marker':7}
     assert len(calls)==2 and all(call[0] is store and call[1]['id']==p['id'] for call in calls)

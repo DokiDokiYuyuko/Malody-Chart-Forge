@@ -11,9 +11,26 @@
     const now=displayNow(snapshot),travel=projection.travelMs??projection.travel;
     return [now+offset,now+travel+offset];
   }
+  function yToTime(y,snapshot,projection){
+    const hit=projection.hitY??projection.hit??projection.geometry?.hit;
+    const runway=projection.runwayPx??projection.runway??projection.geometry?.runway;
+    const travel=projection.travelMs??projection.travel;
+    return runway>0&&travel>0?displayNow(snapshot)+(hit-y)/runway*travel:NaN;
+  }
   function playbackToSource(sample,mapping){
     const part=mapping.find(p=>p.output_start<=sample&&sample<p.output_end);
     return part?{sourceSample:part.source_start+sample-part.output_start,segmentId:part.segment_id}:null;
+  }
+  function sourceToPlayback(sample,mapping){
+    let nearest=0,distance=Infinity;
+    for(const part of mapping){
+      const end=part.source_start+part.output_end-part.output_start;
+      if(part.source_start<=sample&&sample<end)return part.output_start+sample-part.source_start;
+      for(const [source,output] of [[part.source_start,part.output_start],[end,part.output_end]]){
+        const delta=Math.abs(sample-source);if(delta<distance){distance=delta;nearest=output;}
+      }
+    }
+    return nearest;
   }
   function chooseLevel(msPerPixel,manifest){
     const dt=manifest.dt_ms||DT,levels=manifest.levels||[1,2,4,8,16].map((stride,level)=>({stride,level}));
@@ -166,6 +183,6 @@
     resume(){this.suspended=false;return this;}
     dispose(){this.closed=true;this.generation++;clearTimeout(this.retryTimer);this.retryTimer=0;this.controller.abort();for(const entry of this.cache.values())entry.image.close?.();this.cache.clear();this.bytes=0;this.decoder.close();}
   }
-  const api={create:(canvas,options)=>new Pane(canvas,options),displayNow,timeToY,visibleRange,playbackToSource,chooseLevel,tileRows,rgba};
+  const api={create:(canvas,options)=>new Pane(canvas,options),displayNow,timeToY,yToTime,visibleRange,playbackToSource,sourceToPlayback,chooseLevel,tileRows,rgba};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.SpectrumPane=api;
 })(typeof window==='object'?window:globalThis);

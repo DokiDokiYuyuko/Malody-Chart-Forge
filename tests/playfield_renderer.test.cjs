@@ -31,3 +31,14 @@ test('all skins render held heads and tails without changing the shared note sta
   const notes=R.prepareNotes([{lane:2,start:1000,end:3000,head:true,tail:false,holding:true}]),before=JSON.stringify(notes);
   for(const skin of R.skins){calls.length=0;R.render(ctx,800,600,{skin,notes,now:2000,speed:12,pressed:new Set([2])});assert.ok(calls.some(c=>c.method==='fillRect'&&c.fill==='#ffd16650'&&c.args[3]>100));assert.equal(JSON.stringify(notes),before);}
 });
+
+test('all skins preserve failed holds in gray while successful tails disappear',()=>{
+  const calls=[],ctx=new Proxy({createLinearGradient:()=>({addColorStop(){}})},{get:(o,k)=>o[k]||((...args)=>calls.push({method:k,args,fill:o.fillStyle})),set:(o,k,v)=>(o[k]=v,true)});
+  for(const skin of R.skins){
+    const note={lane:1,start:1000,end:2000,head:true,tail:true,holding:false,headGrade:'Perfect',tailGrade:'Miss',failedAt:1400};
+    const before=JSON.stringify(note);calls.length=0;R.render(ctx,640,480,{skin,notes:[note],now:1600,speed:8});
+    assert.ok(calls.some(c=>c.method==='fillRect'&&c.fill==='#87949f44'&&c.args[3]>0));assert.equal(JSON.stringify(note),before);
+    calls.length=0;R.render(ctx,640,480,{skin,notes:[{...note,tailGrade:'Perfect'}],now:1600,speed:8});assert.ok(!calls.some(c=>c.fill==='#87949f44'));
+    calls.length=0;R.render(ctx,640,480,{skin,notes:[{...note,tail:false,headGrade:'Miss',headMissed:true}],now:1600,speed:8});assert.ok(calls.some(c=>c.fill==='#87949f44'));
+  }
+});

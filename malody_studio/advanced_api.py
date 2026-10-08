@@ -5,12 +5,14 @@ import shutil
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from fastapi import APIRouter, Body, File, Form, UploadFile, HTTPException, Request
+from fastapi import APIRouter, Body, File, Form, UploadFile, HTTPException, Request, Depends
 from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 import soundfile as sf
 from .advanced import ROOT, SR, ProjectStore, assemble, defaults, variants, identifier, uid, now, atomic, read, chart_events, validate_settings, merge, as_notes, project_timing
 from . import advanced_agent as agent
+from .naming import DEFAULT_CHART_CREATOR, validate_creator
+from .http_metadata import creator_form
 
 router=APIRouter(prefix='/api/advanced',tags=['advanced'])
 store=ProjectStore()
@@ -25,7 +27,7 @@ def error(exc):
     return HTTPException(409 if any(s in str(exc) for s in ('已更新','已变化','过期','尚未')) else 400,str(exc))
 
 @router.get('/defaults')
-def get_defaults():return {'settings':defaults(),'patterns':list(__import__('malody_studio.difficulty',fromlist=['PATTERN_CHOICES']).PATTERN_CHOICES),'difficulties':list(defaults()['difficulty_rules'])}
+def get_defaults():return {'settings':defaults(),'patterns':list(__import__('malody_studio.difficulty',fromlist=['PATTERN_CHOICES']).PATTERN_CHOICES),'difficulties':list(defaults()['difficulty_rules']),'capabilities':{'music_workflow':2,'desktop':True,'asynchronous_music_analysis':True}}
 
 @router.get('/projects')
 def projects():return {'projects':store.list()}
@@ -61,7 +63,7 @@ def import_charts(p,charts):
             conflict=any(row['points']!=references[0]['points'] for row in references[1:])
             p['tempo']['reference_conflict']=conflict
             if not conflict:
-                p['tempo'].update(points=references[0]['points'],bpm=references[0]['points'][0][1],reference_source='imported_chart',uncertain=True)
+                p['tempo'].update(points=references[0]['points'],bpm=references[0]['points'][0][1],reference_source='imported_chart',uncertain=True,reference_available=True)
             store.save(p)
     return store.load(pid)
 
@@ -127,8 +129,9 @@ def mcz_chart_audio(archive,entries):
     return charts,audio
 
 
-def uploaded_project(path,title,artist):
-    if path.suffix.lower()!='.mcz':return store.create(path,title or path.stem,artist)
+def uploaded_project(path,title,artist,creator=DEFAULT_CHART_CREATOR):
+    creator=validate_creator(creator)
+    if path.suffix.lower()!='.mcz':return store.create(path,title or path.stem,artist,creator=creator)
     with zipfile.ZipFile(path) as z:
         entries=z.infolist()
         if sum(e.file_size for e in entries)>512*1024**2:raise ValueError('曲包解压数据超过 512 MB')
@@ -139,21 +142,32 @@ def uploaded_project(path,title,artist):
         bg=unpack/'background.jpg'
         if background:bg.write_bytes(z.read(background))
         meta=charts[0].get('meta',{}).get('song',{})
-        p=store.create(audio_path,title or meta.get('title') or '导入曲包',artist or meta.get('artist',''),bg if background else None)
+        p=store.create(audio_path,title or meta.get('title') or '导入曲包',artist or meta.get('artist',''),bg if background else None,creator=creator)
         return import_charts(p,charts)
 
 @router.post('/projects/upload')
-async def upload_project(file:UploadFile=File(...),title:str=Form(''),artist:str=Form('')):
+async def upload_project(file:UploadFile=File(...),title:str=Form(''),artist:str=Form(''),creator:str=Depends(creator_form)):
     suffix=Path(file.filename or '').suffix.lower()
-    if suffix not in ('.wav','.flac','.mp3','.m4a','.ogg','.opus','.mcz'):raise HTTPException(400,'请选择音乐或 MCZ 文件')
+    if suffix not in ('.wav','.flac','.mp3','.m4a','.ogg','.opus','.aac','.webm','.mcz'):raise HTTPException(400,'请选择音乐或 MCZ 文件')
     path=ROOT/'cache'/('advanced-upload-'+uid()+suffix);size=0
     try:
+        creator=validate_creator(creator)
         with path.open('wb') as out:
             while chunk:=await file.read(1024*1024):
                 size+=len(chunk)
                 if size>200*1024**2:raise HTTPException(413,'文件最大 200 MB')
                 out.write(chunk)
-        return await run_in_threadpool(uploaded_project,path,title,artist)
+        asset=None
+        if suffix!='.mcz':
+            from .music_assets import identify
+            asset=await run_in_threadpool(identify,path,file.filename)
+        if asset:
+            from .music_assets import asset_cover
+            p=await run_in_threadpool(store.create,path,asset['title'],asset.get('artist',''),asset_cover(asset['id']),creator=creator)
+            p['source_provenance']={'kind':'registered_music','asset_id':asset['id'],'sha256':asset['sha256'],'thumbnail':asset.get('thumbnail')}
+            atomic(store.directory(p['id'])/'project.json',p)
+            return p
+        return await run_in_threadpool(uploaded_project,path,title or (Path(file.filename or '').stem if suffix!='.mcz' else ''),artist,creator)
     except (ValueError,zipfile.BadZipFile) as exc:raise error(exc)
     finally:
         if path.exists():path.unlink()
@@ -161,6 +175,7 @@ async def upload_project(file:UploadFile=File(...),title:str=Form(''),artist:str
 @router.post('/projects/from-source')
 def from_source(payload:dict=Body(...)):
     try:
+        creator=validate_creator(payload.get('creator',DEFAULT_CHART_CREATOR))
         kind=payload.get('type')
         if kind=='job':
             from .server import get_job,_charts_from_disk
@@ -168,7 +183,7 @@ def from_source(payload:dict=Body(...)):
             if job.get('status')!='completed' or job.get('options',{}).get('_advanced'):raise ValueError('请选择已完成的普通曲包')
             directory=ROOT/'outputs'/identifier(job['id']);background=directory/'0'/'background.jpg'
             source=directory/'0'/'audio.ogg'
-            p=store.create(source,job['title'],job['artist'],background if background.exists() else None)
+            p=store.create(source,job['title'],job['artist'],background if background.exists() else None,creator=creator)
             p['source_provenance']=job_audio_provenance(job,source)
             atomic(store.directory(p['id'])/'project.json',p)
             return import_charts(p,list(_charts_from_disk(job['id']).values()))
@@ -176,8 +191,15 @@ def from_source(payload:dict=Body(...)):
             from .music import ready_original_audio
             from .artwork import prepare_artwork
             source,track=ready_original_audio(payload['id']);background,_=prepare_artwork(payload['id'])
-            p=store.create(source,track.get('title','音乐'),track.get('artist') or track.get('channel',''),background)
+            p=store.create(source,track.get('title','音乐'),track.get('artist') or track.get('channel',''),background,creator=creator)
             p['source_provenance']=copy.deepcopy(track['source_provenance'])
+            atomic(store.directory(p['id'])/'project.json',p)
+            return p
+        if kind=='asset':
+            from .music_assets import asset_path, get_asset, asset_cover
+            asset=get_asset(payload['id'])
+            p=store.create(asset_path(asset['id']),asset['title'],asset.get('artist',''),asset_cover(asset['id']),creator=creator)
+            p['source_provenance']={'kind':'registered_music','asset_id':asset['id'],'sha256':asset['sha256'],'thumbnail':asset.get('thumbnail')}
             atomic(store.directory(p['id'])/'project.json',p)
             return p
         raise ValueError('音乐来源无效')
@@ -185,13 +207,50 @@ def from_source(payload:dict=Body(...)):
 
 @router.get('/projects/{pid}')
 def project(pid:str):
-    try:return store.load(pid)
+    try:
+        from .audio_bounds import silent_segment_ids
+        p=store.load(pid)
+        latest={}
+        for path in sorted((store.directory(pid)/'quality-requests').glob('*.json'),key=lambda x:x.stat().st_mtime):
+            request=read(path)
+            for row in request.get('result',{}).get('revisions',[]):
+                ref=store.revision(pid,row['id']);latest[(row['segment_id'],ref['variant'],request.get('request',{}).get('mode','quality'))]=row['id']
+        from .server import jobs,lock
+        from .task_history import candidate_results
+        with lock:
+            density_jobs=copy.deepcopy([j for j in jobs.values() if j.get('options',{}).get('_advanced',{}).get('project',{}).get('id')==pid
+                                       and j['options']['_advanced'].get('target_revision_of') and j.get('status')=='completed'])
+        density_ids=[r['revision_id'] for r in candidate_results(store,p,density_jobs) if r['primary'] and r['current_attempt']]
+        return {**p,'silent_segment_ids':silent_segment_ids(store.directory(pid),p),'quality_candidate_ids':list(latest.values()),
+                'workflow_candidate_ids':[rid for (_,_,mode),rid in latest.items() if mode=='workflow_replay'],
+                'density_candidate_ids':density_ids}
     except ValueError as exc:raise error(exc)
+
+
+@router.post('/projects/{pid}/arrangement-candidates')
+async def derive_arrangement_candidate(pid:str,payload:dict=Body(...)):
+    try:
+        from .quality_workflow import derive_budget
+        return await run_in_threadpool(derive_budget,store,pid,payload)
+    except (ValueError,KeyError,TypeError,OSError) as exc:raise error(exc)
 
 @router.patch('/projects/{pid}')
 def update_project(pid:str,payload:dict=Body(...)):
-    try:return store.update(pid,payload,payload.get('expected_revision'))
+    try:
+        if 'tail_trim_enabled' in payload:
+            from .server import jobs,lock
+            with lock:
+                if any(j.get('status') in ('queued','paused','running') and j.get('options',{}).get('_advanced',{}).get('project',{}).get('id')==pid for j in jobs.values()):
+                    raise HTTPException(409,'项目尚有生成任务，请结束任务后切换裁尾设置')
+        return store.update(pid,payload,payload.get('expected_revision'))
     except (ValueError,TypeError,KeyError) as exc:raise error(exc)
+
+@router.post('/projects/{pid}/workflow-candidates')
+async def derive_workflow_candidate(pid:str,payload:dict=Body(...)):
+    try:
+        from .quality_workflow import derive_workflow
+        return await run_in_threadpool(derive_workflow,store,pid,payload)
+    except (ValueError,KeyError,TypeError,OSError) as exc:raise error(exc)
 
 @router.get('/projects/{pid}/audio')
 def source_audio(pid:str,request:Request):
@@ -259,7 +318,17 @@ def prepare_generation(pid,sid,payload):
     with store.lock:
         p=store.load(pid);store.check(p,payload.get('expected_revision'));s=store.segment(p,sid)
         settings=validate_settings(merge(merge(p['settings'],payload.get('settings',{})),s['overrides']))
-        explicit = 'source_id' in payload or 'stem_set_id' in payload
+        direct_v32_policy=None
+        if settings['engine']=='v32':
+            # Advanced V32 jobs use the direct independent path. Policy identity
+            # is server-owned and is frozen only on this newly prepared request;
+            # retry_advanced_job keeps its original immutable snapshot intact.
+            from .nps_star_calibration import freeze_policy
+            settings['strategy']='independent'
+            direct_v32_policy=freeze_policy()
+        explicit = ('source_id' in payload or 'stem_set_id' in payload) and not payload.get('auto_prepare_stems')
+        if payload.get('auto_prepare_stems'):
+            settings['source_mode']='vocals_accompaniment'
         descriptors = []
         if explicit:
             from .separation import resolve_source
@@ -280,39 +349,189 @@ def prepare_generation(pid,sid,payload):
                 else:original_descriptor = descriptor
             if descriptors and any(row['stem_set_id'] != payload.get('stem_set_id') for row in descriptors):raise ValueError('生成来源与所选分离版本不一致')
             settings['source_mode'] = 'mix'
-        if not settings['fixed_seed']:settings['seed']=int(uid()[:8],16)%2147483640
+        if not settings['fixed_seed']:settings['seed']=payload.get('_generation_batch_seed',int(uid()[:8],16)%2147483640)
         selection=payload.get('variants') or [v['key'] for v in p['variants']]
         chosen=[v for v in p['variants'] if v['key'] in selection]
         if not chosen or len(chosen)!=len(set(selection)):raise ValueError('请选择项目内的有效组合')
-        snapshot={'project':{k:p[k] for k in ('id','title','artist','duration','samples','tempo','source_sha256','revision')},'segment':copy.deepcopy(s),'settings':settings,'variants':chosen}
+        from .separation import resolve_source
+        from .audio_bounds import exact_silence, content_end
+        original=resolve_source(store,pid,'original')
+        silent=exact_silence(original['path'],s['start_sample'],min(s['end_sample'],content_end(p)))
+        snapshot={'project':{k:p[k] for k in ('id','title','artist','duration','samples','tempo','source_sha256','revision','tail_trim')},'segment':copy.deepcopy(s),'settings':settings,'variants':chosen,'original_source':original,'silence_verified':silent}
+        if direct_v32_policy is not None:
+            snapshot['direct_v32_policy']=direct_v32_policy
+        if settings.get('generation_context_policy'):
+            snapshot['generation_context_policy']=copy.deepcopy(settings['generation_context_policy'])
+        if payload.get('auto_prepare_stems'):snapshot['auto_fuse']=True
         if explicit:
             snapshot['auto_fuse'] = payload.get('auto_fuse', False)
             if descriptors:
                 snapshot.update(input_sources=descriptors,stem_set_id=payload['stem_set_id'])
             else:snapshot['source'] = original_descriptor
         snapshot['project'].update(profile=p.get('profile','phone'),source_pcm_sha256=p.get('source_pcm_sha256'))
-        if settings.get('dynamic_enabled'):
+        # Local retries inherit the confirmed immutable music workflow; execution
+        # receives complete snapshots and never resolves a latest plan later.
+        from . import arrangement as arrangements, music_timing
+        frozen={key:copy.deepcopy(payload[key]) for key in ('evidence','timing_map','arrangement_plan','initial_plan_id') if key in payload}
+        explicit_frozen=bool(frozen)
+        workflow=p.get('workflow',{})
+        if not frozen and workflow.get('arrangement_plan_id'):
+            arr=read(store.directory(pid)/'arrangement-plans'/(workflow['arrangement_plan_id']+'.json'))
+            frozen={'arrangement_plan':arr,
+                    'evidence':read(store.directory(pid)/'music-evidence'/(arr['evidence_id']+'.json')),
+                    'timing_map':read(store.directory(pid)/'timing-maps'/(arr['timing_map_id']+'.json'))}
+        if frozen:
+            evidence=music_timing.validate_evidence(frozen['evidence'])
+            timing=music_timing.validate_timing(frozen['timing_map'],evidence['source'])
+            arr=arrangements.validate(frozen['arrangement_plan'],evidence,timing)
+            if evidence['source']['pcm_sha256']!=p.get('source_pcm_sha256') or evidence['source']['samples']!=p['samples']:raise ValueError('冻结音乐证据与当前原曲不符')
+            if not explicit_frozen and timing.get('provenance',{}).get('adapter','').startswith('beat_this'):
+                from .advanced_plans import frozen_plan_needs_rebuild
+                from .bpm_buckets import KNOWN_VERSIONS as known_bucket_versions
+                frozen_bucket_version=arr.get('section_plan',{}).get('bpm_buckets',{}).get('version')
+                # A frozen v2/v3 bucket plan is accepted as it is; only an unknown
+                # (or missing) version is rebuilt. A rebuild for changed settings
+                # keeps the frozen estimator version and its frozen regions.
+                if frozen_plan_needs_rebuild(arr.get('section_plan',{}),settings):
+                    # New settings produce a new artifact, never mutate an
+                    # accepted job's frozen plan or the adopted chart versions.
+                    arr=arrangements.build(evidence,timing,evidence['acoustic'],settings,chosen,
+                        p.get('profile','keyboard'),arr.get('source_id','original'),arr.get('stem_set_id'),arr['regions'],
+                        bucket_version=frozen_bucket_version if frozen_bucket_version in known_bucket_versions else None)
+                    atomic(store.directory(pid)/'section-plans'/(arr['section_plan']['id']+'.json'),arr['section_plan'])
+                    atomic(store.directory(pid)/'arrangement-plans'/(arr['id']+'.json'),arr)
+                    frozen['arrangement_plan']=arr
+            snapshot.update(frozen)
+            if arr.get('section_plan'):snapshot['section_plan']=copy.deepcopy(arr['section_plan'])
+            snapshot['project']['timing_map']=copy.deepcopy(timing)
+        if 'section_plan' not in snapshot:
             from .advanced_plans import get_or_build_plan
-            plan=get_or_build_plan(store,p,settings)
-            snapshot['section_plan']=plan
+            snapshot['section_plan']=get_or_build_plan(store,p,settings)
+        if 'section_plan' in snapshot:
+            plan=snapshot['section_plan']
+            if direct_v32_policy is not None and plan.get('bpm_buckets',{}).get('version'):
+                # Record the estimator the frozen plan really carries, not just the current default.
+                direct_v32_policy['bpm_bucket_version']=plan['bpm_buckets']['version']
+            snapshot['silent_core_ids']=[row['id'] for row in plan['sections'] if max(row['core'][0],s['start_sample'])<min(row['core'][1],s['end_sample'],content_end(p)) and exact_silence(original['path'],max(row['core'][0],s['start_sample']),min(row['core'][1],s['end_sample'],content_end(p)))]
+        from .quality_workflow import freeze as freeze_quality
+        snapshot.update(freeze_quality(settings))
         options={'title':p['title']+' · '+s['name'],'artist':p['artist'],'engine':settings['engine'],'_advanced':snapshot}
-        ensure_engine(options)
+        if not silent:ensure_engine(options)
     return options
 
 @router.post('/projects/{pid}/segments/{sid}/generate')
 def generate_segment(pid:str,sid:str,payload:dict=Body(default={})):
     try:
         from .server import enqueue_job
+        from .audio_bounds import effective_segment
+        p=store.load(pid)
+        if effective_segment(p,store.segment(p,sid)) is None:return {'status':'skipped','message':'静音尾段已排除，无需生成','inference_count':0}
         options=prepare_generation(pid,sid,payload)
         result=enqueue_job(options,{'type':'project_file','path':f'outputs/advanced/{pid}/source.wav'})
         return {**result,**generation_counts(options)}
     except (ValueError,TypeError,KeyError,OSError,RuntimeError) as exc:raise error(exc)
 
 
+@router.post('/projects/{pid}/quality-candidates')
+def quality_candidates(pid:str,payload:dict=Body(...)):
+    try:
+        from .quality_workflow import derive_many
+        return derive_many(store,pid,payload)
+    except (ValueError,TypeError,KeyError,OSError) as exc:raise error(exc)
+
+
+@router.post('/projects/{pid}/density-trials')
+def density_trials(pid:str,payload:dict=Body(...)):
+    """Internal calibration uses the same frozen sources and exclusive queue."""
+    try:
+        import math
+        from .server import enqueue_job
+        from .separation import resolve_source
+        from .advanced_plans import get_or_build_plan
+        from .audio_bounds import content_end
+        from .advanced_generation import attach_timing_reference
+        with store.lock:
+            p=store.load(pid);store.check(p,payload.get('expected_revision'))
+            descriptor=resolve_source(store,pid,payload.get('source_id','original'))
+            conditions=payload['conditions'];bounds=payload['bounds']
+            if not isinstance(conditions,list) or not 1<=len(conditions)<=12 or len(set(conditions))!=len(conditions) or any(not isinstance(c,(int,float)) or isinstance(c,bool) or not math.isfinite(c) or not 1<=c<=10 for c in conditions):raise ValueError('实验条件须为 1–10 的不同数值')
+            if not isinstance(bounds,list) or len(bounds)!=2 or any(not isinstance(c,int) or isinstance(c,bool) for c in bounds) or not 0<=bounds[0]<bounds[1]<=content_end(p):raise ValueError('实验范围不在保留音乐内')
+            if payload.get('split') not in ('development','holdout'):raise ValueError('实验须冻结开发或保留歌曲分组')
+            plan=get_or_build_plan(store,p,p['settings'])
+            from .density_validation import evaluate
+            metric=evaluate([],plan,'expert',bounds)
+            if not metric['active_seconds']:raise ValueError('实验范围没有冻结活跃音乐')
+            mode=payload.get('reference_mode','project')
+            if mode not in ('none','project','revision'):raise ValueError('实验节拍模式无效')
+            windows=payload.get('windows') or [bounds]
+            if not isinstance(windows,list) or not 1<=len(windows)<=32:raise ValueError('实验窗口数量无效')
+            cursor=bounds[0]
+            for window in windows:
+                if (not isinstance(window,list) or len(window)!=2 or any(not isinstance(x,int) or isinstance(x,bool) for x in window)
+                    or window[0]!=cursor or not window[0]<window[1]<=bounds[1]):raise ValueError('实验窗口须完整连续覆盖冻结范围')
+                cursor=window[1]
+            if cursor!=bounds[1]:raise ValueError('实验窗口未覆盖冻结范围')
+            local={};reference=None
+            if mode=='project':
+                from .advanced_generation import timing_reference_info
+                try:reference=timing_reference_info(p)
+                except ValueError:pass
+            elif mode=='revision':
+                parent=store.revision(pid,identifier(payload.get('reference_revision_id')))
+                prov=parent.get('provenance',{})
+                points=prov.get('serialization_tempo',{}).get('points',[])
+                if (parent.get('kind') not in ('model_raw','stem_raw') or prov.get('parent_source_id',p['source_pcm_sha256'])!=p['source_pcm_sha256']
+                    or not points or parent['range'][0]>bounds[0] or parent['range'][1]<bounds[1]):raise ValueError('实验参考须来自同原曲同范围内的已登记原谱')
+                last=-1.
+                for point in points:
+                    if (not isinstance(point,(list,tuple)) or len(point)!=2 or any(not isinstance(x,(int,float)) or isinstance(x,bool) or not math.isfinite(x) for x in point)
+                        or not last<point[0]<=p['duration']*1000 or not 20<=point[1]<=600):raise ValueError('实验参考坐标无效')
+                    last=point[0]
+                if points[0][0]>bounds[0]*1000/SR+1:raise ValueError('实验参考未覆盖起点')
+                reference={'points':copy.deepcopy(points),'source':'experimental_parent_model_output',
+                    'revision_id':parent['id'],'qualified':False,'experimental_only':True}
+            trial={'source':descriptor,'bounds':bounds,'active_seconds':metric['active_seconds'],
+                   'conditions':conditions,'seed':int(payload.get('seed',20261005)),
+                   'pattern':payload.get('pattern','balanced'),'split':payload['split'],
+                   'plan_id':plan['id'],'reference_mode':mode,'reference':reference,
+                   'windows':copy.deepcopy(windows),'experimental_only':True}
+            fallback_source=payload.get('timing_fallback_source_attempt')
+            if fallback_source is not None:
+                if mode!='none':raise ValueError('模型计时回退实验必须保持首轮无参考')
+                if len(conditions)!=1 or len(windows)!=1:
+                    raise ValueError('精确模型计时回退一次仅允许一个条件和一个窗口')
+                from .density_timing_fallback import resolve_artifact
+                trial['timing_fallback_artifact']=resolve_artifact(ROOT,pid,fallback_source,descriptor)
+            if trial['pattern'] not in ('balanced','technical','stream','speed','stamina','jackspeed','jumpstream','handstream','chordjack'):raise ValueError('排键不在实验枚举内')
+            snapshot={'task_type':'density_trial','project':copy.deepcopy(p),'settings':copy.deepcopy(p['settings']),'trial':trial}
+            options={'title':p['title']+' · 密度条件实验','artist':p['artist'],'engine':'v32','_advanced':snapshot}
+        return enqueue_job(options,{'type':'project_file','path':f'outputs/advanced/{pid}/source.wav'})
+    except (ValueError,TypeError,KeyError,OSError) as exc:raise error(exc)
+
+
 def generation_counts(options):
     snapshot=options['_advanced'];s=snapshot['segment'];settings=snapshot['settings'];chosen=snapshot['variants']
-    count=sum(1 for row in snapshot.get('section_plan',{}).get('sections',[]) if row['core'][0]<s['end_sample'] and row['core'][1]>s['start_sample']) or 1
+    from .audio_bounds import content_end
+    end=min(s['end_sample'],content_end(snapshot['project']))
+    if end<=s['start_sample'] or snapshot.get('silence_verified'):return {'inference_count':0,'separation_count':0,'fusion_count':0}
+    sections=snapshot.get('section_plan',{}).get('sections',[])
+    count=sum(1 for row in sections if row['core'][0]<end and row['core'][1]>s['start_sample'] and row['id'] not in snapshot.get('silent_core_ids',[])) if sections else 1
     roles=len(snapshot.get('input_sources',[])) or (2 if settings.get('source_mode')=='vocals_accompaniment' else 1)
+    if snapshot.get('direct_v32_policy'):
+        from .direct_v32 import requests_for
+        requests=requests_for(snapshot['section_plan'],chosen,settings,snapshot['direct_v32_policy'],[s['start_sample'],end])
+        return {'inference_count':roles*len(requests),
+                'separation_count':1 if 'source_id' not in snapshot.get('source',{}) and settings.get('source_mode')=='vocals_accompaniment' else 0,
+                'fusion_count':len(chosen) if snapshot.get('auto_fuse') and roles==2 else 0}
+    from .generation_context import continuous
+    bucket_policy=snapshot.get('section_plan',{}).get('bpm_buckets',{})
+    if bucket_policy.get('enabled') and settings['engine']=='v32':
+        rows=[row for row in sections if row['core'][0]<end and row['core'][1]>s['start_sample']
+              and row['id'] not in snapshot.get('silent_core_ids',[])]
+        count=sum(1 for index,row in enumerate(rows) if not index or
+                  rows[index-1]['bpm_bucket_id']!=row['bpm_bucket_id'] or rows[index-1]['core'][1]!=row['core'][0])
+    elif continuous(snapshot) and settings['engine']=='v32':
+        count=1
     return {'inference_count':roles*count*(len(chosen) if settings['strategy']=='independent' else len(set(v['pattern'] for v in chosen))),
             'separation_count':1 if 'source_id' not in snapshot.get('source',{}) and settings.get('source_mode')=='vocals_accompaniment' else 0,
             'fusion_count':len(chosen) if snapshot.get('auto_fuse') and roles==2 else 0}
@@ -325,22 +544,75 @@ def generation_batch(pid:str,payload:dict=Body(...)):
         ids=payload.get('segment_ids')
         if not isinstance(ids,list) or not ids or len(ids)>100 or any(not isinstance(s,str) for s in ids) or len(set(ids))!=len(ids):raise ValueError('请选择 1–100 个不重复片段')
         identifier(payload['request_id'])
+        from .section_plan import canonical_hash
+        request_hash=canonical_hash({k:v for k,v in payload.items() if k!='_queue_reservation'})
         with store.lock:
             p=store.load(pid);path=store.directory(pid)/'batches'/(payload['request_id']+'.json')
-            if path.is_file():return read(path)
+            if path.is_file():
+                previous=read(path)
+                if previous.get('request_hash') and previous['request_hash']!=request_hash:raise ValueError('同一请求 ID 不能提交不同生成内容')
+                return previous
             with lock:
                 accepted=[j for j in jobs.values() if j.get('options',{}).get('_advanced',{}).get('project',{}).get('id')==pid and j.get('options',{}).get('_advanced',{}).get('request_id')==payload['request_id']]
             if accepted:
-                result={'id':accepted[0]['options']['_advanced']['batch_id'],'request_id':payload['request_id'],'created':accepted[0]['created'],'jobs':[{'id':j['id'],'segment_id':j['options']['_advanced']['segment']['id'],**generation_counts(j['options'])} for j in accepted]}
+                if any(j['options']['_advanced'].get('batch_request_hash') not in (None,request_hash) for j in accepted):raise ValueError('同一请求 ID 不能提交不同生成内容')
+                result={'id':accepted[0]['options']['_advanced']['batch_id'],'request_id':payload['request_id'],'created':accepted[0]['created'],'jobs':[{'id':j['id'],'segment_id':j['options']['_advanced']['segment']['id'],
+                    'segment_ids':[part['id'] for part in j['options']['_advanced'].get('member_segments',[j['options']['_advanced']['segment']])],**generation_counts(j['options'])} for j in accepted]}
+                result['request_hash']=request_hash
                 atomic(path,result);return result
+            from .generation_context import contract as context_contract, group_entries
+            if 'generation_context_policy' in payload and payload['generation_context_policy'] not in (context_contract(),{'version':'legacy-section-pass'}):
+                raise ValueError('连续推理策略须为受支持的完整策略对象，不能只传版本字符串或无效内容')
             store.check(p,payload.get('expected_revision'))
-            bid=uid();entries=[];counts=[]
+            bid=uid();entries=[];counts=[];skipped=[]
+            from .audio_bounds import effective_segment
+            included={part['id'] for part in p['segments'] if part.get('included',True) and effective_segment(p,part) is not None}
+            new_complete=(not payload.get('frozen_revision_ids') and set(ids)==included
+                and payload.get('generation_context_policy',context_contract())==context_contract())
+            batch_seed=int(uid()[:8],16)%2147483640 if new_complete else None
             for sid in sorted(ids,key=lambda sid:store.segment(p,sid)['start_sample']):
-                options=prepare_generation(pid,sid,{**payload,'source_id':payload.get('source_id','original'),'auto_fuse':payload.get('source_id')=='vocals_accompaniment'})
-                options['_advanced'].update(batch_id=bid,request_id=payload['request_id'],activate_initial=False)
+                if effective_segment(p,store.segment(p,sid)) is None:
+                    skipped.append({'segment_id':sid,'reason':'静音尾段已排除，无需生成'})
+                    continue
+                local_payload={**payload,'source_id':payload.get('source_id','original'),'auto_fuse':payload.get('source_id')=='vocals_accompaniment'}
+                if new_complete:local_payload['_generation_batch_seed']=batch_seed
+                frozen_id=payload.get('frozen_revision_ids',{}).get(sid)
+                original_revision=None
+                if frozen_id:
+                    original_revision=store.revision(pid,identifier(frozen_id));part=store.segment(p,sid)
+                    if original_revision['segment_id']!=sid or original_revision['range']!=[part['start_sample'],part['end_sample']]:raise ValueError('补生成原版与当前片段范围不符')
+                    frozen_settings=copy.deepcopy(original_revision['settings']);frozen_settings['fixed_seed']=True
+                    local_payload['settings']=frozen_settings
+                options=prepare_generation(pid,sid,local_payload)
+                if new_complete and options['_advanced']['settings']['engine']=='v32' and not options['_advanced']['segment'].get('overrides'):
+                    options['_advanced']['generation_context_policy']=context_contract()
+                    options['_advanced']['settings']['generation_context_policy']=context_contract()
+                    if not options['_advanced']['settings']['fixed_seed']:
+                        if batch_seed is None:batch_seed=options['_advanced']['settings']['seed']
+                        options['_advanced']['settings']['seed']=batch_seed
+                if original_revision:
+                    if original_revision['variant'] not in [v['key'] for v in options['_advanced']['variants']]:raise ValueError('补生成原版不属于所选谱面组合')
+                    from .section_plan import validate_plan
+                    prov=original_revision.get('provenance',{})
+                    plan_id=prov.get('section_plan_id') or prov.get('plan_hash')
+                    if plan_id:
+                        frozen_plan=read(store.directory(pid)/'section-plans'/(plan_id+'.json'))
+                        validate_plan(frozen_plan,p['source_pcm_sha256'])
+                        options['_advanced']['section_plan']=frozen_plan
+                    raw=[]
+                    for rid in prov.get('parents',[]):
+                        parent=store.revision(pid,identifier(rid))
+                        if parent.get('kind')=='stem_raw' and parent['segment_id']==sid and parent['range']==original_revision['range']:
+                            raw.append(parent)
+                    options['_advanced'].update(reusable_raw_revisions=raw,target_revision_of=original_revision['id'])
+                options['_advanced'].update(batch_id=bid,request_id=payload['request_id'],batch_request_hash=request_hash,activate_initial=False)
                 entries.append((options,{'type':'project_file','path':f'outputs/advanced/{pid}/source.wav'}));counts.append(generation_counts(options))
-            accepted=enqueue_jobs(entries)
-            result={'id':bid,'request_id':payload['request_id'],'created':now(),'jobs':[dict(job,segment_id=entry[0]['_advanced']['segment']['id'],**count) for job,entry,count in zip(accepted,entries,counts)]}
+            if new_complete:entries=group_entries(entries)
+            counts=[generation_counts(entry[0]) for entry in entries]
+            accepted=(enqueue_jobs(entries,reservation_id=payload['_queue_reservation']) if payload.get('_queue_reservation') else enqueue_jobs(entries)) if entries else []
+            result={'id':bid,'request_id':payload['request_id'],'created':now(),'skipped':skipped,'jobs':[dict(job,segment_id=entry[0]['_advanced']['segment']['id'],
+                segment_ids=[part['id'] for part in entry[0]['_advanced'].get('member_segments',[entry[0]['_advanced']['segment']])],**count) for job,entry,count in zip(accepted,entries,counts)]}
+            result['request_hash']=request_hash
             atomic(path,result)
             return result
     except (ValueError,TypeError,KeyError,OSError,RuntimeError) as exc:raise error(exc)
@@ -351,19 +623,24 @@ def available_section_plans(pid:str):
     """Restore completed audio analysis without starting analysis on import."""
     try:
         from .section_plan import validate_plan, VERSION
+        from .advanced_plans import current_plan, default_analysis_policy
+        policy=default_analysis_policy()
         p=store.load(pid); plans=[]
         for path in sorted((store.directory(pid)/'section-plans').glob('*.json'),key=lambda x:x.stat().st_mtime,reverse=True):
             try:
                 plan=read(path)
-                if plan.get('fusion_only') or plan.get('version')!=VERSION or plan.get('samples')!=p['samples']:continue
+                if not current_plan(plan,policy) or plan.get('fusion_only') or plan.get('version')!=VERSION or plan.get('samples')!=p['samples']:continue
                 validate_plan(plan,p['source_pcm_sha256']);plans.append(plan)
             except (ValueError,KeyError,TypeError,OSError):continue
         return {'plans':plans}
-    except (ValueError,FileNotFoundError) as exc:raise error(exc)
+    except (ValueError,FileNotFoundError,RuntimeError) as exc:raise error(exc)
 
 @router.post('/projects/{pid}/segmentation-preview')
 def preview_segmentation(pid:str,payload:dict=Body(...)):
     try:
+        if 'evidence_id' in payload:
+            from .music_workflow import preview
+            return preview(store,pid,payload)
         from .advanced_workbench import segmentation_preview
         return segmentation_preview(store,pid,payload)
     except (ValueError,TypeError,KeyError,OSError) as exc:raise error(exc)
@@ -396,19 +673,37 @@ def layouts(pid:str):
 def generation_batch_result(pid:str,bid:str):
     try:
         from .server import jobs,lock
-        from .task_history import batch_detail
-        with lock:records=copy.deepcopy(list(jobs.values()))
-        return batch_detail(store,pid,bid,records)
+        from .task_history import batch_detail, history_snapshot
+        manifest=next((read(path) for path in (store.directory(pid)/'batches').glob('*.json') if read(path).get('id')==bid),{})
+        if manifest and not manifest.get('jobs'):
+            from .task_history import _counts
+            return {**manifest,'status':'completed','project_id':pid,'counts':_counts([]),'results':[],'source_label':'原曲','auto_fuse':False}
+        with lock:records=history_snapshot(jobs.values())
+        return {**batch_detail(store,pid,bid,records),'skipped':manifest.get('skipped',[])}
     except (ValueError,TypeError,KeyError,OSError) as exc:raise error(exc)
 
 
 def commit_generated(options,result,job_id=None):
-    snapshot=options['_advanced'];pid=snapshot['project']['id'];sid=snapshot['segment']['id'];saved=[]
-    for row in result['advanced_result']:
+    snapshot=options['_advanced'];pid=snapshot['project']['id'];saved=[]
+    from .generation_context import owned_rows
+    for segment,row,bounds in owned_rows(snapshot,result):
+        sid=segment['id']
         # Cache ownership is immutable and independent of this submission's identity.
         provenance={**row['provenance'],'generation_batch_id':snapshot.get('batch_id') or job_id,
                     'generation_job_id':job_id or snapshot.get('generation_job_id')}
-        saved.append(store.add_revision(pid,sid,row['variant'],row['events'],row['settings'],row['kind'],provenance,result['bounds'],activate_initial=snapshot.get('activate_initial',True) and row.get('activate_initial',True),revision_id=row.get('id'))['id'])
+        with store.lock:
+            initial=snapshot.get('activate_initial',True)
+            if snapshot.get('initial_plan_id'):
+                project=store.load(pid);part=store.segment(project,sid)
+                initial=(project.get('workflow',{}).get('arrangement_plan_id')==snapshot['initial_plan_id']
+                         and part['start_sample']==segment['start_sample'] and part['end_sample']==segment['end_sample']
+                         and project['settings']==snapshot['arrangement_plan']['settings']
+                         and part.get('overrides',{})==segment.get('overrides',{})
+                         and part.get('included',True)==segment.get('included',True)
+                         and any(v['key']==row['variant'] for v in project['variants'])
+                         and not segment.get('active',{}).get(row['variant'])
+                         and not part.get('active',{}).get(row['variant']))
+            saved.append(store.add_revision(pid,sid,row['variant'],row['events'],row['settings'],row['kind'],provenance,bounds,activate_initial=initial and row.get('activate_initial',True),revision_id=row.get('id'))['id'])
     return saved
 
 @router.get('/projects/{pid}/tasks')
@@ -427,7 +722,11 @@ def project_tasks(pid:str):
                        source_id=snapshot.get('source',{}).get('source_id'),source_ids=[d['source_id'] for d in snapshot.get('input_sources',[])],
                        stem_set_id=j.get('stem_set_id') or snapshot.get('stem_set_id'),
                        variants=[v['key'] for v in snapshot.get('variants',[])])
-            tasks.append(row)
+            for part in snapshot.get('member_segments',[snapshot.get('segment',{})]):
+                tasks.append({**row,'segment_id':part.get('id'),
+                    'start_sample':part.get('start_sample'),'end_sample':part.get('end_sample'),
+                    'member_segment_ids':[member['id'] for member in snapshot.get('member_segments',[])],
+                    'generation_context_policy':snapshot.get('generation_context_policy')})
         return {'tasks':tasks}
 
 @router.get('/projects/{pid}/revisions/{rid}')
@@ -477,7 +776,8 @@ def process_rules(pid:str,rid:str,payload:dict=Body(default={})):
 
 @router.post('/projects/{pid}/assemblies')
 def create_assembly(pid:str,payload:dict=Body(default={})):
-    try:return assemble(store,pid,payload.get('preroll',1.5),payload.get('expected_revision'))
+    try:
+        return assemble(store,pid,payload.get('preroll',1.5),payload.get('expected_revision'),payload.get('revision_overrides'),payload.get('require_complete',False))
     except (ValueError,KeyError) as exc:raise error(exc)
 
 @router.get('/projects/{pid}/assemblies/{aid}')
@@ -497,18 +797,24 @@ def assembled_chart(pid:str,aid:str,variant:str):
     try:
         directory=store.directory(pid)/'assemblies'/identifier(aid);report=read(directory/'report.json');row=next((r for r in report['charts'] if r['key']==variant),None)
         if not row:raise ValueError('成品组合不存在')
-        chart=next((read(path) for path in (directory/'0').glob('*.mc') if read(path)['meta']['version']==variant),None)
+        chart=next((read(path) for path in (directory/'0').glob('*.mc') if (path.stem==variant or read(path)['meta']['version']==variant)),None)
         # Version metadata includes the variant key, independently of the filesystem name.
-        return {'chart':chart,'title':report['title'],'artist':store.load(pid)['artist'],'pattern':row['pattern'],'difficulty':row['difficulty'],
+        return {'chart':chart,'title':report['title'],'artist':report.get('artist',''),'pattern':row['pattern'],'difficulty':row['difficulty'],
             'audio_url':f'/api/advanced/projects/{pid}/assemblies/{aid}/audio'}
     except (ValueError,FileNotFoundError) as exc:raise error(exc)
 
 @router.get('/projects/{pid}/assemblies/{aid}/download')
 def assembly_download(pid:str,aid:str):
+    from .library import is_deleted
+    if is_deleted(ROOT,'advanced-'+aid):raise HTTPException(410,'曲包已删除，请明确重新导出')
     try:
         from .naming import safe_component
         from .advanced import assembly_archive
-        p=store.load(pid);return FileResponse(assembly_archive(store,pid,aid),media_type='application/octet-stream',filename=safe_component(p['title']+'-剪辑版')+'.mcz')
+        directory=store.directory(pid)/'assemblies'/identifier(aid)
+        report=read(directory/'report.json')
+        from .library import publish
+        _,manifest,archive=publish(ROOT,'advanced-'+aid,assembly_archive(store,pid,aid),report,source={'type':'advanced','project_id':pid,'assembly_id':aid})
+        return FileResponse(archive,media_type='application/octet-stream',filename=manifest['archive'])
     except (ValueError,FileNotFoundError) as exc:raise error(exc)
 
 @router.get('/agent/config')
@@ -601,3 +907,5 @@ def record_evaluation(pid:str,payload:dict=Body(...)):
 
 from .workflow_api import router as workflow_router
 router.include_router(workflow_router)
+from .music_workflow import router as music_workflow_router
+router.include_router(music_workflow_router)

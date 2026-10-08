@@ -82,13 +82,15 @@
     for(let i=0;i<4;i++){ctx.fillStyle=night?(i%2?'#102b22':'#0d241c'):(i%2?'#102839':'#0f2333');ctx.fillRect(i*lane,header,lane,hit-header);ctx.strokeStyle=i===2?'#9ec5dc40':'#9ec5dc18';ctx.lineWidth=i===2?1.5:1;ctx.beginPath();ctx.moveTo(i*lane,header);ctx.lineTo(i*lane,hit);ctx.stroke();}
     ctx.save();ctx.beginPath();ctx.rect(0,header,w,hit-header+1);ctx.clip();
     for(const n of options.notes||[]){
-      if(n.head&&(n.end===null||n.tail))continue;
+      const failedHold=n.end!==null&&(n.headMissed||n.headGrade==='Miss'||n.tailGrade==='Miss');
+      if(n.head&&(n.end===null||n.tail)&&!failedHold)continue;
       const end=n.end??n.start;if(end<now-130||n.start>now+travel+80)continue;
-      const headY=n.holding?hit:hit-(n.start-now)/travel*runway,tailY=hit-(end-now)/travel*runway,x=n.lane*lane+lane*.18,nw=lane*.64,c=colors[n.lane];
+      const headTime=failedHold&&Number.isFinite(n.failedAt)?Math.max(n.start,n.failedAt):n.start;
+      const headY=n.holding?hit:hit-(headTime-now)/travel*runway,tailY=hit-(end-now)/travel*runway,x=n.lane*lane+lane*.18,nw=lane*.64,c=failedHold?'#87949f':colors[n.lane];
       if(!c)continue;
-      if(n.end!==null&&!n.tail){
+      if(n.end!==null&&(!n.tail||failedHold)){
         const top=Math.max(header,tailY),bottom=Math.min(hit,headY);
-        if(bottom>top){ctx.fillStyle=c+(n.headMissed?'13':n.holding?'50':'24');ctx.fillRect(x+1,top,nw-2,bottom-top);ctx.fillStyle=c+(n.holding?'cc':'70');ctx.fillRect(x+1,top,1,bottom-top);ctx.fillRect(x+nw-2,top,1,bottom-top);}
+        if(bottom>top){ctx.fillStyle=c+(failedHold?'44':n.holding?'50':'24');ctx.fillRect(x+1,top,nw-2,bottom-top);ctx.fillStyle=c+(failedHold?'aa':n.holding?'cc':'70');ctx.fillRect(x+1,top,1,bottom-top);ctx.fillRect(x+nw-2,top,1,bottom-top);}
         if(tailY>=header&&tailY<=hit)noteHead(ctx,x,tailY-3,nw,6,c,skin,n.holding);
       }
       const spacing=n.spacingMs*runway/travel,nh=Math.max(3.5,Math.min(15,Number.isFinite(spacing)?spacing*.78:13));

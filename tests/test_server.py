@@ -10,12 +10,53 @@ def empty_advanced_library(monkeypatch, tmp_path):
     return store
 
 
-def test_six_difficulties_and_legacy_normal_alias():
+@pytest.fixture
+def reference_source(monkeypatch, tmp_path):
+    import json
+    (tmp_path/'uploads').mkdir()
+    (tmp_path/'uploads/reference-sirius.m4a').write_bytes(b'synthetic reference identity')
+    tags=tmp_path/'vendor/Mapperatorinator/datasets/tags_2026.json'
+    tags.parent.mkdir(parents=True)
+    tags.write_text(json.dumps({'tags':[]}),encoding='utf-8')
+    monkeypatch.setattr(server,'ROOT',tmp_path)
+    return tmp_path
+
+
+def test_six_difficulties_and_legacy_normal_alias(reference_source):
     options = server.settings('t', 'a', '["easy","medium","hard","expert","master","lunatic"]', .15, 50, 42, None)
     assert len(options['difficulties']) == 6
     assert server.settings('t','a','["normal"]',.15,50,42,None)['difficulties'] == ['medium']
     with TestClient(server.app) as client:
         assert client.post('/api/reference', data={'difficulties':'["normal","medium"]'}).status_code == 400
+
+
+def test_queue_lists_each_advanced_segment_and_frozen_combinations(monkeypatch):
+    monkeypatch.setattr(server,'parallel_benchmark_gate',lambda:(False,'internal hardware policy'))
+    monkeypatch.setattr(server,'configured_concurrency',lambda:1)
+    jobs={}
+    for index,status in enumerate(['running','queued','queued','paused']):
+        jobs[str(index)]={'id':str(index),'title':'song · segment '+str(index),'status':status,'queue_order':index,
+                         'options':{'_advanced':{'project':{'id':'project'},'segment':{'id':str(index),'name':'segment '+str(index)},
+                         'variants':[{'key':'balanced--hard'},{'key':'speed--expert'}]}}}
+    monkeypatch.setattr(server,'jobs',jobs)
+    data=server.queue_status()
+    assert len(data['items'])==4 and data['running']==1 and data['waiting']==3
+    assert [j['id'] for j in data['items']]==list(jobs)
+    assert all(j['variants']==['balanced--hard','speed--expert'] and j['project_id']=='project' for j in data['items'])
+    assert data['items'][1]['segment_name']=='segment 1'
+
+
+def test_queue_checks_hardware_after_releasing_job_lock(monkeypatch):
+    jobs={'j':{'id':'j','title':'song','status':'running','options':{}}}
+    monkeypatch.setattr(server,'jobs',jobs)
+    monkeypatch.setattr(server,'configured_concurrency',lambda:1)
+    checked=[]
+    def gate():
+        checked.append(server.lock.locked())
+        return False,'cached'
+    monkeypatch.setattr(server,'parallel_benchmark_gate',gate)
+    server.queue_status()
+    assert checked==[False]
 
 
 def test_health_reports_engine_readiness_independently(monkeypatch, tmp_path):
@@ -139,6 +180,28 @@ def test_regenerate_reuses_completed_package_audio(monkeypatch, tmp_path):
     assert options.keys() == {'title','artist','engine','difficulties','_source_upload'}
 
 
+def test_job_audio_source_resolves_incomplete_job_root_audio(monkeypatch, tmp_path):
+    job_id = 'e' * 32
+    source = tmp_path / 'outputs' / job_id / 'audio.ogg'
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b'audio from failed job before package export')
+    monkeypatch.setattr(server, 'ROOT', tmp_path)
+    resolved = server.resolve_source_ref({'source_ref': {'type': 'job_audio', 'job_id': job_id}})
+    assert resolved == source
+
+
+def test_job_audio_source_prefers_packaged_audio(monkeypatch, tmp_path):
+    job_id = 'f' * 32
+    folder = tmp_path / 'outputs' / job_id
+    packaged = folder / '0' / 'audio.ogg'
+    packaged.parent.mkdir(parents=True)
+    packaged.write_bytes(b'packaged audio')
+    (folder / 'audio.ogg').write_bytes(b'working audio')
+    monkeypatch.setattr(server, 'ROOT', tmp_path)
+    resolved = server.resolve_source_ref({'source_ref': {'type': 'job_audio', 'job_id': job_id}})
+    assert resolved == packaged
+
+
 
 def test_failed_upload_job_can_retry_without_sharing_cleanup_owner(monkeypatch, tmp_path):
     job_id = 'd' * 32
@@ -172,19 +235,20 @@ def test_history_pagination_keeps_all_records_and_supports_search(monkeypatch, e
         assert client.get('/api/history?q=Song%2069').json()['total'] == 1
         assert client.get('/api/history?page=0').status_code == 422
 
-def test_bad_difficulty_input_returns_400():
+def test_bad_difficulty_input_returns_400(reference_source):
     with TestClient(server.app) as client:
         for value in ('bad-json', '[]', '[["easy"]]', '[null]', '["easy","easy"]'):
             assert client.post('/api/reference', data={'difficulties': value}).status_code == 400
 
-def test_unknown_engine_and_unavailable_v32_are_rejected(monkeypatch):
+def test_unknown_engine_and_unavailable_v32_are_rejected(monkeypatch, reference_source):
     from malody_studio import mapperatorinator
     monkeypatch.setattr(mapperatorinator, 'ready', lambda: False)
     with TestClient(server.app) as client:
         assert client.post('/api/reference', data={'engine': '../../bad'}).status_code == 400
         assert client.post('/api/reference', data={'engine': 'v32'}).status_code == 503
 
-def test_upload_preserves_bytes_and_validates_type(monkeypatch):
+def test_upload_preserves_bytes_and_validates_type(monkeypatch, reference_source):
+    monkeypatch.setattr(server,'ensure_engine',lambda *_:None)
     received = []
     def capture(source, options):
         received.append((source, source.read_bytes(), options))

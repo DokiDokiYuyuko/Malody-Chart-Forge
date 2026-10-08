@@ -2,7 +2,7 @@
   'use strict';
 
   const pageSize = 10;
-  const typeLabels = {advanced:'高级制谱',song:'单曲制谱',separation:'音频分离',separation_trial:'局部分离试听'};
+  const typeLabels = {advanced:'高级制谱',song:'单曲制谱',separation:'音频分离',separation_trial:'局部分离试听',music_analysis:'音乐准备与分析'};
   const stateLabels = {completed:'已完成',partial:'部分完成',failed:'生成失败',cancelled:'已取消',interrupted:'已中断',historical:'历史结果',queued:'等待生成',running:'生成中',paused:'已暂停',needs_source:'需重新导入'};
   const count = value => Math.max(0, Number(value) || 0);
   const recordIdentity = item => String(item.record_id || item.id || '');
@@ -35,7 +35,7 @@
     const jobId = target.job_id || item.job_id;
     if (item.type === 'song' || target.type === 'job') return jobId ? {type:'job',jobId} : null;
     if (!projectId) return null;
-    if (item.type === 'separation' || item.type === 'separation_trial' || target.task_type === 'separation') {
+    if (item.type === 'separation' || item.type === 'separation_trial' || item.type === 'music_analysis' || target.task_type === 'separation') {
       return {type:'advanced',projectId,mode:'prepare',jobId,stemSetId:target.stem_set_id || item.stem_set_id || item.jobs?.find(job => job.stem_set_id)?.stem_set_id};
     }
     return batchId || jobId ? {type:'advanced',projectId,batchId,jobId} : null;
@@ -100,9 +100,14 @@
         const title = job.segment_name || job.title || '生成任务';
         const variants = (job.variants || []).map(variant => typeof variant === 'string' ? variant : variant.label || variant.key || '').filter(Boolean).join('、');
         body.append(element('strong', '', title), element('span', '', [job.superseded ? '旧尝试（已被重试替代）' : '', stateLabels[job.status] || job.status, variants, job.source_label, job.message].filter(Boolean).join(' · ')));
+        for(const report of job.density_validation||[])body.append(element('span','',globalThis.MalodyDensity?.label(report)||'密度未评估'));
         for (const failure of job.errors || []) {
           const label = typeof failure === 'string' ? failure : [failure.segment_name || failure.stage || failure.variant, failure.error || failure.message || failure.reason || failure.summary].filter(Boolean).join('：');
           if (label) body.append(element('p', 'task-history-failure', label));
+        }
+        for (const notice of job.warnings || []) {
+          const label = [notice.stage || notice.variant, notice.error || notice.message].filter(Boolean).join('：');
+          if (label) body.append(element('p', 'task-history-note', '提示（非失败）：' + label));
         }
         if ((job.status === 'failed' || job.status === 'interrupted') && !job.errors?.length) body.append(element('p', 'task-history-failure', job.error || job.message || '未记录失败原因，可打开结果查看。'));
         const open = button('打开任务文件夹', 'task-history-folder', () => openFolder(item, job, open));

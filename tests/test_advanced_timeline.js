@@ -1,5 +1,18 @@
 const test=require('node:test');const assert=require('node:assert/strict');const T=require('../web/advanced-timeline.js');
 test('millisecond label rounds carry without changing original precision',()=>{assert.equal(T.time(149.3150000243365),'02:29.315');assert.equal(T.time(59.9998),'01:00.000');});
+test('new analysis displays its own nonzero clock while manual confirmation remains authoritative',()=>{
+  const legacy={bpm:91,points:[[0,91]],uncertain:true},timing={source:{sample_rate:44100},tempo_points:[{sample:6048,bpm:120}],uncertain:true};
+  assert.deepEqual(T.displayTempo(legacy,timing).points,[[6048*1000/44100,120]]);
+  assert.equal(T.displayTempo(legacy,timing).uncertain,true);
+  assert.deepEqual(T.displayTempo({...legacy,manual:true,uncertain:false},timing).points,legacy.points);
+});
+test('unreliable analysis does not display a legacy BPM or invent zero-time beats',()=>{
+  const timing={source:{sample_rate:44100},tempo_points:[],beat_samples:[6048,28098],eligibility:{meter:false,phase:false},uncertain:true};
+  assert.equal(T.displayTempo({bpm:91},timing).label,'节拍待确认');
+  assert.deepEqual(T.displayTempo({bpm:91},timing).points,[]);
+  assert.deepEqual(T.timingAnchors({bpm:91},timing,2).map(b=>b.time_ms),[6048*1000/44100,28098*1000/44100]);
+  assert(T.timingAnchors({bpm:91},timing,2).every(b=>b.uncertain&&b.kind==='beat'));
+});
 test('time editor accepts minutes and millisecond precision',()=>{assert.equal(T.parseTime('00:27.318'),27.318);assert.equal(T.parseTime('2:29.315'),149.315);assert.throws(()=>T.parseTime('2:70.1'));});
 test('export removes precisely the excluded source intervals',()=>{assert.deepEqual(T.removedRanges(60,[{included:true,start_sample:28*44100,end_sample:44*44100}]),[[0,28],[44,60]]);});
 test('stale candidates cannot mark a changed segment as adopted',()=>{assert.equal(T.segmentStatus({included:true,start_sample:10,end_sample:30,active:{},versions:{a:[{range:[0,30]}]}},'a'),'stale');});

@@ -21,10 +21,10 @@ def test_multiple_pattern_settings_keep_independent_v32_tags():
     assert options['difficulties'] == ['hard', 'expert']
 
 
-def test_chart_names_identify_model_pattern_and_difficulty():
+def test_chart_names_identify_pattern_and_difficulty():
     assert chart_id('stream', 'hard') == 'stream--hard'
     name = chart_stem('Song: A/B', 'v32', 'stream', 'hard')
-    assert name == 'Song_ A_B_Mapperatorinator-V32_Stream_Hard'
+    assert name == 'Song_ A_B_Stream_Hard'
 
 
 def test_jack_stream_and_speed_are_measurably_distinct():
@@ -56,7 +56,7 @@ def test_package_keeps_named_pattern_charts_and_legacy_layout(tmp_path):
 
     with zipfile.ZipFile(archive_path) as archive:
         assert archive.testzip() is None
-        assert '0/' in archive.namelist()
+        assert '0/' not in archive.namelist()
         assert f'0/{filename}' in archive.namelist()
         assert '0/audio.ogg' in archive.namelist()
         assert json.loads(archive.read(f'0/{filename}'))['meta']['mode'] == 0

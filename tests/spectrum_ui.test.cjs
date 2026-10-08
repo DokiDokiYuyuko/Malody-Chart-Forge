@@ -68,3 +68,21 @@ test('a stale tile cannot repaint another source, and disposal stops paused retr
   assert.equal(a.draws.length,0);assert.equal(a.pane.cache.size,0);
   a.pane.dispose();assert.equal(a.timers.size,0);
 });
+
+const transportSpectrum = require('../web/spectrum.js');
+test('spectrum seek inverses the displayed source clock and translated game geometry', () => {
+  for (const now of [0,1500,81087]) for (const travel of [312.5,625,5000]) {
+    const snapshot={displayTimeMs:now}, projection={hit:650,header:70,runway:580,travelMs:travel};
+    for (const time of [now-1000,now,now+1000]) assert.ok(Math.abs(transportSpectrum.yToTime(transportSpectrum.timeToY(time,snapshot,projection),snapshot,projection)-time)<1e-8);
+  }
+  assert.ok(Number.isNaN(transportSpectrum.yToTime(10,{}, {runway:0,travelMs:500})));
+});
+
+test('source timeline seek maps retained audio and snaps removed regions to a retained edge',()=>{
+  const mapping=[{source_start:0,output_start:1500,output_end:11500},{source_start:20000,output_start:11500,output_end:21500}];
+  assert.equal(transportSpectrum.sourceToPlayback(0,mapping),1500);
+  assert.equal(transportSpectrum.sourceToPlayback(5000,mapping),6500);
+  assert.equal(transportSpectrum.sourceToPlayback(20000,mapping),11500);
+  assert.equal(transportSpectrum.sourceToPlayback(15000,mapping),11500);
+  assert.equal(transportSpectrum.sourceToPlayback(50000,mapping),21500);
+});

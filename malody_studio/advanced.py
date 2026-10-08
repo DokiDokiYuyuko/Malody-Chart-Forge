@@ -19,10 +19,13 @@ from .paths import ROOT
 from .audio import ffmpeg, analyze
 from .charts import Note, beat_value, chart_stats, package, validate_chart
 from .difficulty import PRESETS, PATTERN_CHOICES
-from .mapperatorinator import serialize_with_timing
+from .mapperatorinator import serialize_with_timing, serialize_fixed_scroll
 from .quality import assess
+from .audio_bounds import policy, effective_segments, content_end
+from .naming import DEFAULT_CHART_CREATOR, validate_creator
 
 SR = 44100
+RAW_HEAD_POLICY = 'native-model-heads-v1'
 CONDITIONS = dict(zip(PRESETS, (2., 3.3, 4.6, 5.9, 7.2, 8.)))
 
 def revision_audio_source(revision):
@@ -53,7 +56,16 @@ def atomic(path, data):
     finally:temporary.unlink(missing_ok=True)
 
 def read(path):
-    return json.loads(Path(path).read_text(encoding='utf-8'))
+    # Windows may briefly deny a reader while an atomic manifest replacement
+    # owns the file. Retry the read only; malformed JSON remains an error.
+    for attempt in range(10):
+        try:
+            text=Path(path).read_text(encoding='utf-8')
+        except PermissionError:
+            if attempt==9:raise
+            time.sleep(.025*(attempt+1))
+        else:
+            return json.loads(text)
 
 def identifier(value):
     if not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{32}', value):
@@ -61,15 +73,21 @@ def identifier(value):
     return value
 
 def defaults():
+    from .nps_star_calibration import normalize_ranges
+    difficulty_rules={k: {f: v[f] for f in ('rate', 'chord', 'gap', 'peak', 'hold_ms')} for k,v in PRESETS.items()}
     return dict(engine='v32', strategy='independent', steps=50, seed=20261003,
-                fixed_seed=False, ln_ratio=.15, pattern_strength=20, mug_style='ranked',
+                fixed_seed=False, ln_ratio=.15, pattern_strength=20, mug_style='ranked', parallel_streams=0,
                 dynamic_enabled=True, dynamic_strength=1., section_granularity='balanced',
+                bpm_bucket_count=5, bpm_bucket_range=.2,
+                region_granularity='balanced', region_max_count=24,
                 source_mode='mix', separation_preset='htdemucs',
+                fusion_mode='relane', fusion_primary='vocals',
                 mug_guidance=1.5, mug_eta=0., v32_temperature=.9, v32_top_p=.9,
                 v32_column_temperature=.8, v32_cfg_scale=1., v32_year=2024,
                 v32_descriptors=[], v32_negative_descriptors=[],
                 conditions={'mug': dict(CONDITIONS), 'v32': dict(CONDITIONS)},
-                difficulty_rules={k: {f: v[f] for f in ('rate', 'chord', 'gap', 'peak', 'hold_ms')} for k,v in PRESETS.items()})
+                difficulty_rules=difficulty_rules,
+                nps_ranges=normalize_ranges(None,difficulty_rules))
 
 def merge(base, override):
     result = copy.deepcopy(base)
@@ -80,16 +98,28 @@ def merge(base, override):
 def validate_settings(value):
     if not isinstance(value, dict) or set(value) - set(defaults()):
         raise ValueError('生成设置包含未知字段')
+    from .nps_star_calibration import normalize_ranges
+    had_nps_ranges='nps_ranges' in value
     d = merge(defaults(), value)
+    if type(d['parallel_streams']) is not int or not 0 <= d['parallel_streams'] <= 16:
+        raise ValueError('parallel_streams 须为 0–16 的整数（0/1 为顺序生成）')
     # Missing settings in historical snapshots retain the original generation policy.
     if 'dynamic_enabled' not in value:d['dynamic_enabled']=False
     if not isinstance(d['dynamic_enabled'],bool) or d['source_mode'] not in ('mix','vocals_accompaniment') or d['separation_preset'] not in ('htdemucs','htdemucs_ft'):
         raise ValueError('段落适配或分轨设置无效')
+    if d['fusion_mode'] not in ('vocals_priority','accompaniment_priority','relane') or d['fusion_primary'] not in ('vocals','accompaniment'):
+        raise ValueError('声部融合方式或主次无效')
     if d['section_granularity'] not in ('fine','balanced','coarse'):
         raise ValueError('制谱段落粒度无效')
+    if d['region_granularity'] not in ('fine','balanced','coarse'):
+        raise ValueError('音乐区域划分粒度无效')
+    if type(d['region_max_count']) is not int or not 1 <= d['region_max_count'] <= 100:
+        raise ValueError('建议区域数量上限须为 1–100 的整数')
+    if type(d['bpm_bucket_count']) is not int or not 1<=d['bpm_bucket_count']<=9:
+        raise ValueError('BPM 桶数量上限须为 1–9 的整数')
     if d['engine'] not in ('mug','v32') or d['strategy'] not in ('independent','fast'):
         raise ValueError('模型或生成策略无效')
-    ranges = {'dynamic_strength':(0,1), 'seed': (0,2147483640), 'ln_ratio': (0,.8), 'pattern_strength': (5,35),
+    ranges = {'dynamic_strength':(0,1),'bpm_bucket_range':(0,.25), 'seed': (0,2147483640), 'ln_ratio': (0,.8), 'pattern_strength': (5,35),
               'mug_guidance': (1,30), 'mug_eta': (0,1), 'v32_temperature': (.1,2),
               'v32_top_p': (.1,1), 'v32_column_temperature': (.1,2), 'v32_cfg_scale': (.5,5), 'v32_year': (2007,2024)}
     for key,(lo,hi) in ranges.items():
@@ -111,6 +141,15 @@ def validate_settings(value):
         for key,(lo,hi) in rr.items():
             v=values[key]
             if isinstance(v,bool) or not isinstance(v,(float,int)) or not math.isfinite(v) or not lo<=v<=hi or (key!='rate' and int(v)!=v): raise ValueError('谱面规则超出范围')
+    # Historical project settings have no explicit range object. Reconstruct
+    # their default band around the saved rate instead of silently substituting
+    # today's preset rates. New and partial range settings use the same helper
+    # to normalize all six difficulty tiers.
+    d['nps_ranges']=normalize_ranges(value.get('nps_ranges') if had_nps_ranges else None,d['difficulty_rules'])
+    # Keep the legacy scalar available to existing reports and readers. Direct
+    # V32 generation consumes nps_ranges; rate remains its midpoint alias.
+    for difficulty,bounds in d['nps_ranges'].items():
+        d['difficulty_rules'][difficulty]['rate']=(bounds['min']+bounds['max'])/2
     for key in ('v32_descriptors','v32_negative_descriptors'):
         v=d[key]
         if not isinstance(v,list) or len(v)>4 or len(set(v))!=len(v) or any(not isinstance(t,str) or len(t)>64 for t in v): raise ValueError('风格标签最多四个不重复值')
@@ -132,7 +171,7 @@ def audio_metadata(data):
     import librosa
     mono=librosa.resample(data.mean(axis=1),orig_sr=SR,target_sr=22050)
     try: tempo=analyze(mono,22050)
-    except ValueError: tempo={'bpm':120.,'beat_times':[],'beat_variability':1.,'warnings':['节拍参考不可靠，暂用 120 BPM；可以手动修改，不改变音符时间。']}
+    except ValueError: tempo={'bpm':120.,'beat_times':[],'beat_variability':1.,'reference_available':False,'warnings':['节拍参考不可靠，暂用 120 BPM 显示；请确认 BPM 后再恢复模型节拍，不改变音符时间。']}
     tempo['uncertain']=not tempo['beat_times'] or tempo.get('beat_variability',1)>.04
     waveform=[round(float(np.max(np.abs(c))),4) if len(c) else 0 for c in np.array_split(data,2400)]
     return waveform,tempo
@@ -140,7 +179,7 @@ def audio_metadata(data):
 def as_notes(events, origin=0, end=None):
     return [Note(e['start_ms']-origin,e['lane'],None if e.get('end_ms') is None else min(e['end_ms'],end if end is not None else e['end_ms'])-origin) for e in events]
 
-def valid_events(events, start, end, source_end):
+def valid_events(events, start, end, source_end, *, allow_raw_hold_overlap=False):
     for e in events:
         if not isinstance(e,dict):raise ValueError('音符事件格式无效')
         lane=e.get('lane');t=e.get('start_ms')
@@ -153,8 +192,9 @@ def valid_events(events, start, end, source_end):
         if isinstance(lane,bool) or not isinstance(lane,int) or lane not in range(4): raise ValueError('轨道必须为 0–3')
         if isinstance(t,bool) or not isinstance(t,(float,int)) or not math.isfinite(t) or not start<=t<end: raise ValueError('音符头越过片段范围')
         if tail is not None and (isinstance(tail,bool) or not isinstance(tail,(float,int)) or not math.isfinite(tail) or not t<tail<=source_end+.01): raise ValueError('长条尾部无效或越过音频范围')
-        if t<=previous[lane]+.1 or t<occupied[lane]-.1: raise ValueError(f'第 {lane+1} 轨存在重复音符或长条占轨冲突')
-        occupied[lane]=min(tail,end) if tail is not None else t; previous[lane]=t
+        if t<=previous[lane]+.1 or (not allow_raw_hold_overlap and t<occupied[lane]-.1): raise ValueError(f'第 {lane+1} 轨存在重复音符或长条占轨冲突')
+        until=min(tail,end) if tail is not None else t
+        occupied[lane]=max(occupied[lane],until) if allow_raw_hold_overlap else until; previous[lane]=t
     return True
 
 def stats(events, start, end, bpm=120, waveform=None):
@@ -196,6 +236,7 @@ class ProjectStore:
     def load(self,pid):
         try:
             p=read(self.directory(pid)/'project.json')
+            p.setdefault('creator',DEFAULT_CHART_CREATOR)
             for segment in p['segments']:
                 for versions in segment['versions'].values():
                     for version in versions:
@@ -203,6 +244,7 @@ class ProjectStore:
                             r=self.revision(pid,version['id'])
                             if 'engine' not in version:version.update(engine=r['settings']['engine'],seed=r.get('provenance',{}).get('seed'))
                             for key,value in version_source_metadata(r).items():version.setdefault(key,value)
+            p['tail_trim']=policy(self.directory(pid),p)
             return p
         except FileNotFoundError:raise ValueError('高级项目不存在')
     def save(self,p):
@@ -216,23 +258,34 @@ class ProjectStore:
             p=read(path);rows.append({k:p[k] for k in ('id','title','artist','updated','revision','duration')})
         return sorted(rows,key=lambda p:p['updated'],reverse=True)
 
-    def create(self,source,title,artist='',background=None):
+    def create(self,source,title,artist='',background=None,creator=DEFAULT_CHART_CREATOR):
         if not isinstance(title,str) or not title.strip() or len(title)>120 or len(artist)>120:raise ValueError('曲名或音乐人无效')
+        creator=validate_creator(creator)
         pid=uid(); directory=self.directory(pid);directory.mkdir()
         # Preserve the exact source bytes, without trusting the original filename.
         shutil.copyfile(source,directory/('source-original'+Path(source).suffix.lower()))
         data=decode(source,directory/'source.wav'); waveform,tempo=audio_metadata(data)
         if background and Path(background).is_file():shutil.copyfile(background,directory/'background.jpg')
-        p={'schema':1,'id':pid,'revision':0,'title':title.strip(),'artist':artist or 'Unknown','created':now(),'updated':now(),
+        p={'schema':1,'id':pid,'revision':0,'title':title.strip(),'artist':artist or 'Unknown','creator':creator,'created':now(),'updated':now(),
            'duration':len(data)/SR,'sample_rate':SR,'samples':len(data),'source_sha256':hashlib.sha256((directory/'source.wav').read_bytes()).hexdigest(),
            'source_pcm_sha256':hashlib.sha256(data.astype('<f4').tobytes()).hexdigest(),
-           'profile':'phone','settings':defaults(),'variants':variants(['balanced'],['easy','medium','hard']),
+           'profile':'keyboard','settings':defaults(),'variants':variants(['balanced'],['hard']),
            'tempo':tempo,'waveform':waveform,'segments':[],'assemblies':[],'reviews':[],'examples':[],'feedback':[],'background':bool(background)}
+        p['tail_trim']=policy(directory,p)
         atomic(directory/'project.json',p); return p
 
     def update(self,pid,payload,expected=None):
         with self.lock:
             p=self.load(pid);self.check(p,expected)
+            if 'creator' in payload:p['creator']=validate_creator(payload['creator'])
+            for field in ('title','artist'):
+                if field in payload:
+                    value=payload[field]
+                    if not isinstance(value,str) or len(value)>120 or (field=='title' and not value.strip()):raise ValueError('曲名须填写，曲名与音乐人最多 120 字')
+                    p[field]=value.strip()
+            if 'tail_trim_enabled' in payload:
+                if type(payload['tail_trim_enabled']) is not bool:raise ValueError('裁尾设置须为布尔值')
+                p['tail_trim']['enabled']=payload['tail_trim_enabled']
             if 'settings' in payload:p['settings']=validate_settings(payload['settings'])
             if 'profile' in payload:
                 if payload['profile'] not in ('phone','keyboard'):raise ValueError('请选择手机四指或键盘 4K')
@@ -245,8 +298,7 @@ class ProjectStore:
                 for a in points:
                     if not isinstance(a,list) or len(a)!=2 or any(isinstance(v,bool) or not isinstance(v,(float,int)) or not math.isfinite(v) for v in a) or not 0<=a[0]<=p['duration']*1000 or a[0]<=last or not 20<=a[1]<=600:raise ValueError('BPM 锚点须按时间递增，范围为 20–600')
                     last=a[0]
-                if points[0][0]!=0:raise ValueError('首个 BPM 锚点必须在原曲 0 ms')
-                p['tempo'].update(points=copy.deepcopy(points),bpm=points[0][1])
+                p['tempo'].update(points=copy.deepcopy(points),bpm=points[0][1],reference_available=True)
                 if 'points_metadata' in payload['tempo']:
                     metadata=payload['tempo']['points_metadata']
                     if not isinstance(metadata,list) or len(metadata)!=len(points) or any(not isinstance(row,dict) or ('confirmed' in row and not isinstance(row['confirmed'],bool)) or ('source' in row and not isinstance(row['source'],str)) for row in metadata):raise ValueError('BPM 锚点来源须逐点对应，并使用布尔确认状态')
@@ -292,7 +344,12 @@ class ProjectStore:
     def add_revision(self,pid,sid,variant,events,settings,kind,provenance=None,bounds=None,activate_initial=True,revision_id=None):
         with self.lock:
             p=self.load(pid);s=self.segment(p,sid);bounds=bounds or [s['start_sample'],s['end_sample']]
-            start,end=(v*1000/SR for v in bounds); valid_events(events,start,end,p['duration']*1000)
+            start,end=(v*1000/SR for v in bounds)
+            raw_evidence=(kind in ('model_raw','stem_raw') and (provenance or {}).get('raw_head_policy')==RAW_HEAD_POLICY)
+            valid_events(events,start,end,p['duration']*1000,allow_raw_hold_overlap=raw_evidence)
+            if raw_evidence and activate_initial:
+                try:valid_events(events,start,end,p['duration']*1000)
+                except ValueError:activate_initial=False
             rid=identifier(revision_id) if revision_id else uid()
             if (self.directory(pid)/'revisions'/(rid+'.json')).exists():
                 existing=self.revision(pid,rid)
@@ -301,7 +358,8 @@ class ProjectStore:
             r={'id':rid,'created':now(),'segment_id':sid,'variant':variant,'range':bounds,'settings':copy.deepcopy(settings),'kind':kind,
                 'events':copy.deepcopy(events),'stats':stats(events,start,end),'provenance':provenance or {},'review':{'status':'unreviewed','reason':''}}
             atomic(self.directory(pid)/'revisions'/(rid+'.json'),r)
-            s['versions'].setdefault(variant,[]).append({'id':rid,'kind':kind,'created':r['created'],'stats':r['stats'],'range':bounds,'review':r['review'],'engine':settings['engine'],'seed':r['provenance'].get('seed'),'source_role':r['provenance'].get('source_role'),'parent_revisions':r['provenance'].get('parents',[]),**version_source_metadata(r)})
+            s['versions'].setdefault(variant,[]).append({'id':rid,'kind':kind,'created':r['created'],'stats':r['stats'],'range':bounds,'review':r['review'],'engine':settings['engine'],'seed':r['provenance'].get('seed'),'source_role':r['provenance'].get('source_role'),'parent_revisions':r['provenance'].get('parents',[]),
+                'density_validation':r['provenance'].get('density_validation'),'quality_summary':r['provenance'].get('quality_summary'),'fusion_summary':r['provenance'].get('fusion_summary'),**version_source_metadata(r)})
             if activate_initial and variant not in s['active'] and bounds==[s['start_sample'],s['end_sample']]:s['active'][variant]=rid
             self.save(p);return r
 
@@ -309,7 +367,44 @@ class ProjectStore:
         with self.lock:
             p=self.load(pid);self.check(p,expected);s=self.segment(p,sid);r=self.revision(pid,rid)
             if r['segment_id']!=sid or r['variant']!=variant or r['range']!=[s['start_sample'],s['end_sample']]:raise ValueError('版本属于其他组合或片段范围已变化')
+            if r.get('kind') in ('model_raw','stem_raw') and r.get('provenance',{}).get('raw_head_policy')==RAW_HEAD_POLICY:
+                start,end=(v*1000/SR for v in r['range']);valid_events(r['events'],start,end,p['duration']*1000)
             s['active'][variant]=rid;return self.save(p)
+
+    def add_candidate_batch(self,pid,rows,expected=None):
+        """Publish inactive candidates in one manifest commit; orphan files are reusable."""
+        with self.lock:
+            p=self.load(pid);self.check(p,expected);prepared=[]
+            if not rows or len({r['id'] for r in rows})!=len(rows):raise ValueError('候选批次不能为空或包含重复版本')
+            for row in rows:
+                rid=identifier(row['id']);s=self.segment(p,row['segment_id']);bounds=row['range']
+                if bounds!=[s['start_sample'],s['end_sample']]:raise ValueError('候选范围已变化，请刷新')
+                if row['kind'] not in ('quality','fusion'):raise ValueError('批次仅发布派生候选')
+                start,end=(v*1000/SR for v in bounds)
+                valid_events(row['events'],start,end,p['duration']*1000)
+                r={**copy.deepcopy(row),'created':row.get('created',now()),
+                   'stats':stats(row['events'],start,end),'review':{'status':'unreviewed','reason':''}}
+                target=self.directory(pid)/'revisions'/(rid+'.json')
+                if target.is_file():
+                    existing=read(target)
+                    if any(existing.get(k)!=r.get(k) for k in ('segment_id','variant','range','events','settings','kind','provenance')):
+                        raise ValueError('版本提交冲突')
+                    r=existing
+                prepared.append((s,r,target))
+            # Every row is valid before any immutable file or project state is written.
+            for s,r,target in prepared:
+                if not target.is_file():atomic(target,r)
+            for s,r,_ in prepared:
+                versions=s['versions'].setdefault(r['variant'],[])
+                if any(v['id']==r['id'] for v in versions):continue
+                provenance=r['provenance'];settings=r['settings']
+                versions.append({'id':r['id'],'kind':r['kind'],'created':r['created'],'stats':r['stats'],
+                    'range':r['range'],'review':r['review'],'engine':settings['engine'],
+                    'seed':provenance.get('seed'),'source_role':provenance.get('source_role'),
+                    'parent_revisions':provenance.get('parents',[]),
+                    'density_validation':provenance.get('density_validation'),
+                    'quality_summary':provenance.get('quality_summary'),'fusion_summary':provenance.get('fusion_summary'),**version_source_metadata(r)})
+            return self.save(p)
 
     def feedback(self,pid,rid,status,reason):
         if status not in ('unreviewed','usable','needs_changes'):raise ValueError('评审状态无效')
@@ -338,16 +433,24 @@ class ProjectStore:
 
     def local_chart(self,pid,rid):
         p=self.load(pid);r=self.revision(pid,rid);a,b=(v*1000/SR for v in r['range'])
+        if r.get('kind') in ('model_raw','stem_raw') and r.get('provenance',{}).get('raw_head_policy')==RAW_HEAD_POLICY:
+            valid_events(r['events'],a,b,p['duration']*1000)
         ev=copy.deepcopy(r['events']); changes=[]
         for e in ev:
             if e.get('end_ms') is not None and e['end_ms']>b:
                 e['end_ms']=b;changes.append({'type':'clipped_hold','start_ms':e['start_ms'],'note_id':e['id']})
             if e.get('end_ms') is not None and e['end_ms']-e['start_ms']<100:e['end_ms']=None;changes.append({'type':'short_hold_to_tap','note_id':e['id']})
-        notes=as_notes(ev,a,b);timing=project_timing(p,a,b)
-        chart=serialize_with_timing(notes,p['title'],p['artist'],r['variant'],timing) if notes else None
+        notes=as_notes(ev,a,b)
+        chart=serialize_fixed_scroll(notes,p['title'],p['artist'],r['variant']) if notes else None
+        if chart:
+            chart['meta']['creator']=p['creator']
+            # A preview of an immutable revision must not change when a poll
+            # happens to cross a wall-clock second.
+            chart['meta']['time']=int(datetime.fromisoformat(r.get('created',p['created'])).timestamp())
         y,_=sf.read(self.directory(pid)/'source.wav',start=r['range'][0],stop=r['range'][1],dtype='float32',always_2d=True)
         target=r['settings']['difficulty_rules'][r['variant'].split('--')[1]]['rate']
-        alerts=assess(notes,(b-a)/1000,target,y.mean(axis=1),SR,chart,r['variant'])
+        from .beat_analysis import mono_audio
+        alerts=assess(notes,(b-a)/1000,target,mono_audio(y)[0],SR,chart,r['variant'])
         for alert in alerts:alert['start_ms']+=a;alert['end_ms']+=a
         for gap in r.get('provenance',{}).get('active_audio_gaps',[]):
             alerts.append({'type':'model_underfilled_active_core','severity':'warning','difficulty':gap.get('difficulty',r['variant']),
@@ -356,15 +459,40 @@ class ProjectStore:
         for excluded in r.get('provenance',{}).get('excluded_leading_holds',[]):
             alerts.append({'type':'head_outside_segment','severity':'info','start_ms':a,'end_ms':min(b,excluded['end_ms']),
                 'lane':excluded['lane'],'message':'长条头位于片段之前，本段排除该长条；可调整范围或保留前一连续片段。'})
-        return {'title':p['title'],'artist':p['artist'],'pattern':r['variant'].split('--')[0],'difficulty':r['variant'].split('--')[1],
+        return {'title':p['title'],'artist':p['artist'],'creator':p['creator'],'pattern':r['variant'].split('--')[0],'difficulty':r['variant'].split('--')[1],
                 'events':ev,'chart':chart,'range':r['range'],'duration':(b-a)/1000,'stats':r['stats'],'alerts':alerts,'boundary_changes':changes,
                 'audio_source_id':revision_audio_source(r),
                 'audio_url':f'/api/advanced/projects/{pid}/revisions/{rid}/audio?source_id={quote(revision_audio_source(r),safe="")}', 'revision':r}
 
+def timing_serialization(timing,start=0):
+    if not timing or not timing.get('eligibility',{}).get('v32'):return {}
+    from .music_timing import validate_timing
+    validate_timing(timing)
+    return {'meter':timing['meter'],'phase_ms':timing['phase_sample']*1000/timing['source']['sample_rate']-start}
+
+
 def project_timing(p,start,end):
-    points=p['tempo'].get('points') or [[0,p['tempo']['bpm']]]
+    timing=p.get('timing_map')
+    if timing:
+        from .music_timing import validate_timing
+        validate_timing(timing)
+        if timing['eligibility']['v32'] and timing['tempo_points']:
+            points=[[row['sample']*1000/timing['source']['sample_rate'],row['bpm']] for row in timing['tempo_points']]
+        else:
+            # A serialization clock only encodes existing absolute note times.
+            # It is never supplied to inference as a qualified beat reference.
+            tempo=p.get('serialization_tempo',p['tempo'])
+            points=tempo.get('points') or [[0,tempo['bpm']]]
+    else:points=p['tempo'].get('points') or [[0,p['tempo']['bpm']]]
     active=next((bpm for t,bpm in reversed(points) if t<=start),points[0][1])
     return [(0.,active)]+[(t-start,bpm) for t,bpm in points if start<t<end]
+
+
+def revision_timing(project,revision,start,end):
+    provenance=revision.get('provenance',{})
+    tempo=provenance.get('serialization_tempo',project['tempo'])
+    return project_timing({**project,'timing_map':provenance.get('timing_map'),
+                           'serialization_tempo':tempo,'tempo':tempo},start,end)
 
 def assemble_pcm(data,segments,preroll):
     chunks=[np.zeros((round(preroll*SR),2),dtype=np.float32)]; mapping=[];cursor=len(chunks[0])
@@ -384,7 +512,9 @@ def mapped_events(revisions,mapping):
         limit=end; j=i+1
         while j<len(mapping) and mapping[j-1]['source_end']==mapping[j]['source_start']:limit=mapping[j]['source_end']*1000/SR;j+=1
         for e in r['events']:
-            if not start<=e['start_ms']<end:continue
+            if not start<=e['start_ms']<end:
+                if e['start_ms']>=end:seams.append({'type':'excluded_after_cut','note_id':e['id'],'source_ms':e['start_ms']})
+                continue
             n=copy.deepcopy(e);n['source_id']=e['id'];n['start_ms']+=delta
             if e.get('end_ms') is not None:
                 tail=min(e['end_ms'],limit)
@@ -400,38 +530,66 @@ def mapped_events(revisions,mapping):
         occupied[e['lane']]=max(occupied[e['lane']],e.get('end_ms') or e['start_ms'])
     return out,seams
 
-def assemble(store,pid,preroll=1.5,expected=None):
+def export_readiness(project):
+    """Only adopted versions matching the current range can be assembled."""
+    segments=effective_segments(project)
+    rows=[]
+    for variant in project['variants']:
+        key=variant['key'];missing=[]
+        for segment in segments:
+            rid=segment['active'].get(key)
+            version=next((v for v in segment['versions'].get(key,[]) if v['id']==rid),None)
+            if not version or version.get('range')!=segment.get('original_range',[segment['start_sample'],segment['end_sample']]):
+                missing.append({'id':segment['id'],'name':segment['name']})
+        rows.append({**variant,'missing':missing,'ready':bool(segments) and not missing})
+    return rows
+
+
+def assemble(store,pid,preroll=1.5,expected=None,revision_overrides=None,require_complete=False):
     # Serialise exports per project, without blocking edits or other projects.
     with store.lock:
         lock=store.assembly_locks.setdefault(identifier(pid),threading.RLock())
     with lock:
-        return _assemble(store,pid,preroll,expected)
+        return _assemble(store,pid,preroll,expected,revision_overrides,require_complete)
 
 
-def _assemble(store,pid,preroll=1.5,expected=None):
+def _assemble(store,pid,preroll=1.5,expected=None,revision_overrides=None,require_complete=False):
     if isinstance(preroll,bool) or not isinstance(preroll,(float,int)) or not math.isfinite(preroll) or not 0<=preroll<=3:raise ValueError('准备时间须为 0–3 秒')
     preroll=float(preroll)
     with store.lock:
-        p=store.load(pid);store.check(p,expected); snapshot=p['revision'];segments=sorted([s for s in p['segments'] if s['included']],key=lambda s:s['start_sample'])
+        p=store.load(pid);store.check(p,expected); snapshot=p['revision']
+        if revision_overrides:
+            p=copy.deepcopy(p)
+            for sid,chosen in revision_overrides.items():
+                part=store.segment(p,identifier(sid))
+                if not isinstance(chosen,dict):raise ValueError('候选导出版本映射无效')
+                for variant,rid in chosen.items():
+                    if variant not in {row['key'] for row in p['variants']}:raise ValueError('候选导出组合不在项目选择中')
+                    ref=store.revision(pid,identifier(rid))
+                    if ref['segment_id']!=sid or ref['variant']!=variant or ref['range']!=[part['start_sample'],part['end_sample']]:raise ValueError('候选导出版本与片段或范围不符')
+                    part['active'][variant]=rid
+        segments=sorted(effective_segments(p),key=lambda s:s['start_sample'])
         if not segments:raise ValueError('请先选择要拼接的片段')
         missing=[];complete=[]
-        for v in p['variants']:
-            absent=[s['name'] for s in segments if not s['active'].get(v['key'])]
-            if absent:missing.append({'variant':v['key'],'segments':absent})
-            else:complete.append(v)
-        if not complete:raise ValueError('所选片段没有完整组合，请补齐生成或使用候选版本')
+        for row in export_readiness(p):
+            if row['missing']:missing.append({'variant':row['key'],'segments':[s['name'] for s in row['missing']]})
+            else:complete.append(next(v for v in p['variants'] if v['key']==row['key']))
+        if require_complete and missing:raise ValueError('尚未完成所有所选组合：'+'；'.join(row['variant']+'：'+'、'.join(row['segments']) for row in missing))
+        if not complete:
+            details='；'.join(item['variant'].replace('--',' · ')+'：'+ '、'.join(item['segments']) for item in missing)
+            raise ValueError('无法导出，以下片段尚未采用有效谱面：'+details+'。请重试失败片段或生成后采用新方案')
         refs={v['key']:[store.revision(pid,s['active'][v['key']]) for s in segments] for v in complete}
-        identity={'format':2,'source':p['source_sha256'],'title':p['title'],'artist':p['artist'],
+        identity={'format':4,'export_clock':'fixed-scroll-120-v1','source':p['source_sha256'],'title':p['title'],'artist':p['artist'],'creator':p['creator'],
                   'background':p['background'],'tempo':p['tempo'],'preroll':preroll,'variants':p['variants'],
                   'segments':[[s['id'],s['start_sample'],s['end_sample'],s['active']] for s in segments]}
         fingerprint=hashlib.sha256(json.dumps(identity,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         for old in reversed(p['assemblies']):
+            from .library import is_deleted
+            if is_deleted(store.root.parent.parent,'advanced-'+old['id']):continue
             folder=store.directory(pid)/'assemblies'/old['id']
             same=old.get('fingerprint')==fingerprint
-            # Legacy exports can be reused only when their append was the last project mutation.
-            if not old.get('fingerprint') and not old.get('stale') and old.get('project_revision')==snapshot-1:
-                legacy=read(folder/'report.json') if (folder/'report.json').exists() else {}
-                same=legacy.get('export_format')=='classic-ascii-v2' and legacy.get('preroll')==preroll
+            # Legacy identities cannot prove creator equality. Keep their downloads
+            # intact, but require a creator-aware fingerprint for cache reuse.
             if same and all((folder/name).is_file() for name in ('report.json','audio.ogg','malody-4k.mcz')):
                 return {**old,'reused':True}
     data,_=sf.read(store.directory(pid)/'source.wav',dtype='float32',always_2d=True); pcm,mapping=assemble_pcm(data,segments,preroll)
@@ -443,21 +601,18 @@ def _assemble(store,pid,preroll=1.5,expected=None):
     if r.returncode:raise ValueError('成品音频编码失败')
     duration=len(pcm)/SR; info=sf.info(directory/'audio.ogg')
     if info.subtype!='VORBIS' or abs(info.frames-len(pcm))>1:raise ValueError('成品音频采样数量校验失败')
-    timing=[]
-    for m in mapping:
-        start,end=m['source_start']*1000/SR,m['source_end']*1000/SR
-        for t,bpm in project_timing(p,start,end):timing.append((t+m['output_start']*1000/SR,bpm))
-    timing=[(0.,timing[0][1])]+timing
     charts={};filenames={};rows=[];preview={};changes=[]
     for v in complete:
         revisions=refs[v['key']]
-        if any(r['range']!=[s['start_sample'],s['end_sample']] for r,s in zip(revisions,segments)):raise ValueError('片段范围变化，当前版本已过期')
+        if any(r['range']!=s['original_range'] for r,s in zip(revisions,segments)):raise ValueError('片段范围变化，当前版本已过期')
         ev,seams=mapped_events(revisions,mapping);changes.extend([{**x,'variant':v['key']} for x in seams])
         if any(x.get('severity')=='error' for x in seams):raise ValueError('连续片段长条发生占轨冲突，请在接缝附近修订后导出：'+v['key'])
         if not ev:missing.append({'variant':v['key'],'reason':'整张成品没有音符'});continue
         valid_events(ev,0,duration*1000,duration*1000)
         engines=list(dict.fromkeys(r['settings']['engine'] for r in revisions)); engine=engines[0] if len(engines)==1 else 'Mixed-Models'
-        title=p['title']+'（剪辑版）';n=as_notes(ev); chart=serialize_with_timing(n,title,p['artist'],v['key'],timing)
+        from .naming import chart_label
+        title=p['title'];n=as_notes(ev); chart=serialize_fixed_scroll(n,title,p['artist'],chart_label(v['pattern'],v['difficulty']))
+        chart['meta']['creator']=p['creator']
         if p['background']:chart['meta']['background']='background.jpg'
         validate_chart(chart,duration*1000)
         # Round-trip through the serialized variable-BPM coordinates.
@@ -466,13 +621,21 @@ def _assemble(store,pid,preroll=1.5,expected=None):
         # Classic importers may ignore ZIP's Unicode filename flag. Keep paths portable;
         # the full song title and chart identity remain in UTF-8 metadata.
         charts[v['key']]=chart;filenames[v['key']]=v['key']+'.mc';preview[v['key']]=ev
-        rows.append({**v,**chart_stats(n,duration),'engine':engine,'sources':[{'segment_id':s['id'],'revision_id':r['id'],'engine':r['settings']['engine'],'source_role':r.get('provenance',{}).get('source_role','mix')} for s,r in zip(segments,revisions)]})
+        from .quality_workflow import assembly_density
+        from .quality_acceptance import assembly_quality
+        rows.append({**v,**chart_stats(n,duration),'engine':engine,'density_validation':assembly_density(revisions,ev,duration,mapping),
+                     'quality_validation':assembly_quality(revisions),
+                     'sources':[{'segment_id':s['id'],'revision_id':r['id'],'engine':r['settings']['engine'],'source_role':r.get('provenance',{}).get('source_role','mix')} for s,r in zip(segments,revisions)]})
     if not charts:raise ValueError('成品至少需要一个有效音符')
-    report={'schema':1,'export_format':'classic-ascii-v2','fingerprint':fingerprint,'advanced':True,'title':p['title']+'（剪辑版）','duration':duration,'sample_rate':SR,'samples':len(pcm),'preroll':preroll,
+    report={'schema':1,'export_format':'classic-ascii-v2','export_clock':{'policy':'fixed-scroll-120-v1','bpm':120.,'constant_scroll':True},'fingerprint':fingerprint,'advanced':True,'title':p['title'],'artist':p['artist'],'creator':p['creator'],'tail_trim':p.get('tail_trim'),'duration':duration,'sample_rate':SR,'samples':len(pcm),'preroll':preroll,
             'mapping':mapping,'charts':rows,'missing':missing,'seam_changes':changes,'preview':preview,'project_revision':snapshot,'created':now(),
+            'candidate_export':bool(revision_overrides),
             'audio_processing':{'source':'original','gain':gain,'codec':'vorbis','quality':7,'eq':False,'denoise':False}}
     archive=package(directory,charts,directory/'audio.ogg',report,store.directory(pid)/'background.jpg' if p['background'] else None,filenames)
-    result={'id':aid,'fingerprint':fingerprint,'created':report['created'],'duration':duration,'mapping':mapping,'charts':rows,'missing':missing,'seam_changes':changes,'project_revision':snapshot,'download':f'/api/advanced/projects/{pid}/assemblies/{aid}/download'}
+    from .library import publish
+    root=store.root.parent.parent
+    publish(root,'advanced-'+aid,archive,report,source={'type':'advanced','project_id':pid,'assembly_id':aid})
+    result={'title':p['title'],'artist':p['artist'],'creator':p['creator'],'id':aid,'fingerprint':fingerprint,'created':report['created'],'duration':duration,'mapping':mapping,'charts':rows,'missing':missing,'seam_changes':changes,'project_revision':snapshot,'download':f'/api/advanced/projects/{pid}/assemblies/{aid}/download'}
     with store.lock:
         latest=store.load(pid); result['stale']=latest['revision']!=snapshot;latest['assemblies'].append(result);store.save(latest)
     return result
@@ -488,7 +651,11 @@ def assembly_archive(store,pid,aid):
     with lock:
         destination=directory/'compatibility-v2';archive=destination/'malody-4k.mcz'
         if archive.is_file():return archive
-        charts={read(path)['meta']['version']:read(path) for path in (directory/'0').glob('*.mc')}
+        from .naming import chart_label
+        charts={}
+        for row in report['charts']:
+            match=next((path for path in (directory/'0').glob('*.mc') if path.stem==row['key'] or read(path)['meta']['version'] in (row['key'],chart_label(row['pattern'],row['difficulty']))),None)
+            if match:charts[row['key']]=read(match)
         if set(charts)!={row['key'] for row in report['charts']}:raise ValueError('成品谱面与报告不一致，无法生成兼容曲包')
         destination.mkdir(exist_ok=True)
         fixed={**report,'export_format':'classic-ascii-v2','original_archive':directory.name}

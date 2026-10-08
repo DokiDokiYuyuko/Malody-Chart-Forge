@@ -96,7 +96,7 @@ def section_plan(pid:str,payload:dict=Body(default={})):
         settings = validate_settings(merge(p['settings'],payload.get('settings',{})))
         plan = get_or_build_plan(store,p,settings)
         return plan
-    except (ValueError,OSError,KeyError) as exc:raise failure(exc)
+    except (ValueError,OSError,KeyError,RuntimeError) as exc:raise failure(exc)
 
 @router.get('/projects/{pid}/section-plans/{plan_id}')
 def get_plan(pid:str,plan_id:str):

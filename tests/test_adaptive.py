@@ -95,7 +95,8 @@ def test_v32_inference_coalesces_only_adjacent_near_equal_conditions():
     assert owners['expert-0']['key']==owners['expert-1']['key']
     assert owners['expert-1']['key']!=owners['expert-2']['key']
     assert owners['easy-0']['core']==[0,300]
-    assert owners['easy-0']['start_time']==0 and owners['easy-0']['end_time']==30
+    assert (owners['easy-0']['start_time'],owners['easy-0']['end_time'])==gen._v32_time_bounds([0,310])
+    assert (owners['easy-0']['core_start_time'],owners['easy-0']['core_end_time'])==gen._v32_time_bounds([0,300])
     assert owners['easy-0']['sr']==pytest.approx((2.+2.08+2.18)/3)
 
 
@@ -109,8 +110,8 @@ def test_v32_coalescing_respects_user_selected_maximum_span():
     assert owners['easy-0']['key']==owners['easy-1']['key']
     assert owners['easy-1']['key']!=owners['easy-2']['key']
     assert groups[0]['retry_sections']==[
-        {'start_time':0,'end_time':10,'retry_min_heads':4},
-        {'start_time':10,'end_time':20,'retry_min_heads':4}]
+        {'start_time':gen._v32_time_bounds([0,100])[0],'end_time':gen._v32_time_bounds([0,100])[1],'retry_min_heads':4},
+        {'start_time':gen._v32_time_bounds([100,200])[0],'end_time':gen._v32_time_bounds([100,200])[1],'retry_min_heads':4}]
 
 
 def test_v32_millisecond_boundary_belongs_to_following_core():
@@ -259,6 +260,31 @@ def test_dynamic_native_core_conditions_seeds_and_separate_candidate(planned,tmp
     cache=json.loads((tmp_path/'run-one'/'speed-mother.json').read_text(encoding='utf-8'))
     assert len(cache['records'])==len(plan['sections'])
     assert all(record['attempts'] for record in cache['records'])
+
+
+def test_dynamic_skips_exact_original_silent_core_without_model(planned,tmp_path,monkeypatch):
+    path,settings,tempo,plan=planned
+    from malody_studio import mapperatorinator
+    data=sf.read(path,dtype='float32',always_2d=True)[0]
+    silent=plan['sections'][1]['core']
+    data[silent[0]:silent[1]]=0
+    sf.write(path,data,sp.SR,subtype='FLOAT')
+    plan=sp.build_plan(path,settings,tempo)
+    calls=[]
+    def infer(source,folder,options,progress):
+        calls.extend(options['_advanced_presets'])
+        return {r['key']:([Note(r['start_time']+100,0)],[[0,150]])
+                for r in options['_advanced_presets']},{}
+    monkeypatch.setattr(mapperatorinator,'generate',infer)
+    snapshot={'project':{'title':'silent core','artist':'','tempo':tempo},
+              'segment':{'start_sample':0,'end_sample':plan['samples']},
+              'settings':settings,'variants':[{'key':'speed--hard','pattern':'speed','difficulty':'hard'}],
+              'section_plan':plan,'original_source':{'path':str(path)}}
+    result=gen.run(path,tmp_path/'silent-core',{'_advanced':snapshot},lambda *_:None)
+    assert calls and result['advanced_result']
+    assert all(r['core'][1]<=silent[0] or r['core'][0]>=silent[1] for r in calls)
+    cache=json.loads((tmp_path/'silent-core'/'speed-mother.json').read_text(encoding='utf-8'))
+    assert cache['metadata']['silent_cores']==[{'core':silent,'silence_verified':True,'inference_count':0}]
 
 
 def test_fast_stem_raw_only_coalesces_mothers_without_budget(planned,tmp_path,monkeypatch):

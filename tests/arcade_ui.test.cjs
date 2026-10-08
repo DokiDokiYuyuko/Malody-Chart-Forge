@@ -108,6 +108,24 @@ test('early long-note release breaks combo but preserves max combo', async () =>
   assert.equal(a.el('arcade-max-combo').textContent, '最高连击 1'); a.step(3200); assert.equal(Number(a.el('arcade-combo-number').textContent), 0);
 });
 
+for(const host of ['simple','advanced'])test(`${host} early hold release stays gray and scrolls smoothly until its tail`,async()=>{
+  const a=app({chart:longChart});
+  const options=host==='advanced'?{host:'adv-game-host',data:{chart:longChart,audio_url:'/hold.ogg',title:'Hold'}}:{};
+  await a.api.open(host==='advanced'?'advanced':'job','hold',options);await a.countdown();
+  a.input('keydown','KeyD',1000);a.drawCalls.length=0;a.step(1399);
+  const heldBody=a.drawCalls.find(c=>c.method==='fillRect'&&c.fillStyle==='#62d6d150'&&c.args[3]>0);
+  assert.ok(heldBody);
+  a.input('keyup','KeyD',1400);a.drawCalls.length=0;a.step(1401);
+  const failedBody=a.drawCalls.find(c=>c.method==='fillRect'&&c.fillStyle==='#87949f44'&&c.args[3]>0);
+  assert.ok(failedBody,'failed body remains gray');assert.ok(Math.abs(failedBody.args[3]-heldBody.args[3])<3,'release does not jump');
+  a.drawCalls.length=0;a.step(2800);
+  const later=a.drawCalls.find(c=>c.method==='fillRect'&&c.fillStyle==='#87949f44'&&c.args[3]>0);
+  assert.ok(later&&later.args[3]<failedBody.args[3],'remaining body continues toward the judgment line');
+  assert.equal(a.el('arcade-judge').textContent,'Miss');assert.equal(Number(a.el('arcade-combo-number').textContent),0);
+  a.drawCalls.length=0;a.step(3200);assert.ok(!a.drawCalls.some(c=>c.fillStyle==='#87949f44'),'failed tail clears only after passing the line');
+  assert.equal(Number(a.el('arcade-combo-number').textContent),0);a.api.close();
+});
+
 test('simultaneous holds remain independent when one lane releases early', async () => {
   const chart = {...longChart, note: [longChart.note[0], {column: 1, beat: [2, 0, 1], endbeat: [6, 0, 1]}, longChart.note[1]]};
   const a = app({chart}); await a.api.open('job', 'hold-chord'); await a.countdown();
@@ -222,4 +240,35 @@ test('retry from the inline result screen clears the old summary before its new 
   assert.equal(a.api.state(), 'countdown'); assert.equal(a.el('arcade-overlay').children.length, 2);
   assert.equal(a.el('arcade-overlay-title').textContent, '3'); assert.equal(a.el('arcade-score').children[0].children[0].textContent, 0);
   await a.countdown(); assert.equal(a.api.state(), 'playing'); assert.equal(a.el('arcade-audio').plays, 2);
+});
+
+for (const autoplay of [false, true]) test(`seek preserves ${autoplay ? 'autoplay' : 'DFJK'} playback and retires skipped LN judgments`, async () => {
+  const a = app({chart: longChart}), frames = [];
+  await a.api.open('job', 'hold', {autoplay, onFrame: s => frames.push(s)}); await a.countdown();
+  if (!autoplay) a.input('keydown', 'KeyD', 1000); else a.step(1000);
+  const plays = a.el('arcade-audio').plays;
+  a.setPerf(5000);
+  assert.equal(a.api.seek(4000), true);
+  assert.equal(a.api.state(), 'playing'); assert.equal(a.api.position(), 4000);
+  assert.equal(a.el('arcade-audio').currentTime, 4); assert.equal(a.el('arcade-audio').plays, plays);
+  assert.equal(frames.at(-1).displayTimeMs, 4000);
+  a.step(4100); assert.equal(Number(a.el('arcade-combo-number').textContent), 0);
+  const counts = a.el('arcade-score').children.map(cell => Number(cell.children[0].textContent));
+  assert.deepEqual(counts, [0,0,0,0], 'no skipped heads or stale LN tails score/miss');
+  if (!autoplay) a.input('keydown', 'KeyF', 5000); else a.step(5000);
+  assert.equal(Number(a.el('arcade-combo-number').textContent), 1);
+});
+
+test('paused and countdown seeks do not play; resume retains target; backward seek resets notes', async () => {
+  const a = app({chart: longChart}); await a.api.open('job','hold');
+  a.el('arcade-audio').duration = 8;
+  assert.equal(a.api.seek(4000), true); assert.equal(a.api.state(), 'paused');
+  assert.equal(a.el('arcade-audio').plays, 0); assert.equal(a.api.position(), 4000);
+  a.el('arcade-pause').click(); await a.countdown(); assert.equal(a.el('arcade-audio').currentTime, 4);
+  a.el('arcade-pause').click(); const plays = a.el('arcade-audio').plays;
+  a.api.seek(0); assert.equal(a.el('arcade-audio').plays, plays); assert.equal(a.el('arcade-audio').paused, true);
+  a.el('arcade-pause').click(); await a.countdown(); a.input('keydown','KeyD',1000);
+  assert.equal(Number(a.el('arcade-combo-number').textContent), 1);
+  a.api.seek(9000); assert.equal(a.api.position(),8000);
+  a.api.close(); assert.equal(a.api.seek(1000),false);
 });

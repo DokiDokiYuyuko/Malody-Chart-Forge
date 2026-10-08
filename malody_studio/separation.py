@@ -13,6 +13,7 @@ import soundfile as sf
 from .advanced import SR, atomic, read
 from .paths import ROOT
 from . import separation_models as registry
+from .deployment_integrity import registry_inference_hash
 
 VERSION = 'demucs-4.0.1-adapter-v1'
 PYTHON = ROOT / 'runtime' / 'separation-venv' / 'Scripts' / 'python.exe'
@@ -112,7 +113,13 @@ def deployment(model='htdemucs'):
             raise RuntimeError('RoFormer 固定代码清单缺失')
         for name, record in manifest['code_files'].items():
             path = (ROOT / name).resolve()
-            if not path.is_relative_to(ROOT.resolve()) or not path.is_file() or file_hash(path) != record['sha256']:
+            if not path.is_relative_to(ROOT.resolve()) or not path.is_file():
+                raise RuntimeError('RoFormer 固定代码校验失败：' + name)
+            if name == 'malody_studio/separation_models.py' and manifest.get('registry_inference_sha256'):
+                valid = registry_inference_hash(path) == manifest['registry_inference_sha256']
+            else:
+                valid = file_hash(path) == record['sha256']
+            if not valid:
                 raise RuntimeError('RoFormer 固定代码校验失败：' + name)
     return manifest
 
@@ -191,8 +198,11 @@ def validate_manifest(directory, manifest, expected=None):
 
 def ensure_stems(source, directory=None, settings=None, progress=lambda *_: None, *, cache_scope=None):
     """Synchronous stage; no nested queue job and no generated playback replacement."""
+    from .workflow_log import stage, event, file_identity, current_context
     options = validated_settings(settings)
-    data, rate = sf.read(source, dtype='float32', always_2d=True)
+    with stage('separation.read_and_verify_original_pcm', source=file_identity(source,hash_file=True),
+               expected_model=options['model']):
+        data, rate = sf.read(source, dtype='float32', always_2d=True)
     if rate != SR or data.shape[1] != 2 or not len(data) or not np.isfinite(data).all():
         raise ValueError('分离输入须为有限双声道 44100 Hz 源 PCM')
     model = deployment(options['model'])
@@ -217,10 +227,13 @@ def ensure_stems(source, directory=None, settings=None, progress=lambda *_: None
     cache = ((Path(directory).resolve() / 'separation') if cache_scope is not None else (ROOT / 'cache' / 'separation')) / key
     cache.mkdir(parents=True, exist_ok=True)
     def cached_result():
-        manifest = validate_manifest(cache, read(cache / 'manifest.json'), key)
+        with stage('separation.validate_cached_stems', cache=cache, recipe_hash=key):
+            manifest = validate_manifest(cache, read(cache / 'manifest.json'), key)
         if manifest.get('id') != key or any(manifest.get(field) != value for field,value in recipe.items()):
             raise ValueError('分离缓存完整原曲、配置或部署来源与配方不匹配')
         _record_model_inference(options['model'],manifest)
+        event('separation_result','separation.cache_hit',manifest_id=manifest.get('id'),
+              stems=manifest.get('stems'),performance=manifest.get('performance'),device=manifest.get('device'))
         return manifest
     # Atomic mkdir protects a shared source even outside the parent GPU lease.
     lease = cache / 'writer.lock'
@@ -263,7 +276,8 @@ def ensure_stems(source, directory=None, settings=None, progress=lambda *_: None
             except (OSError, ValueError, KeyError):
                 pass
         request = {**recipe, 'recipe_hash': key, 'source': str(Path(source).resolve()),
-                   'directory': str(cache), 'model_root': str(model_root)}
+                   'directory': str(cache), 'model_root': str(model_root),
+                   'workflow_trace': current_context()}
         atomic(cache / 'request.json', request)
         env = os.environ.copy()
         env.update(PYTHONUTF8='1', TEMP=str(ROOT / 'cache'), TMP=str(ROOT / 'cache'),
@@ -271,32 +285,40 @@ def ensure_stems(source, directory=None, settings=None, progress=lambda *_: None
         log_path = ROOT / 'logs' / ('separation-' + key[:16] + '.log')
         progress('分离人声与伴奏', 5)
         from .resident import external_gpu
-        with external_gpu(progress), log_path.open('w', encoding='utf-8') as log:
-            with subprocess.Popen([str(python), '-u', str(worker), str(cache / 'request.json')],
-                                  cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
-                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)) as process:
-                atomic(lease / 'owner.json', {'pid': os.getpid(), 'worker_pid': process.pid})
-                deadline=time.monotonic()+7200;last_reported=5
-                while process.poll() is None:
-                    try:
-                        with log_path.open('rb') as stream:
-                            stream.seek(max(0,log_path.stat().st_size-16384))
-                            tail=stream.read().decode('utf-8','replace')
-                        percent=model_progress_from_log(tail)
-                        if percent is not None:
-                            overall=5+percent*.87
-                            if overall>=last_reported+1:
-                                progress(f'分离模型处理中 · {percent}%',overall);last_reported=overall
-                    except OSError:
-                        pass
-                    if time.monotonic()>deadline:
-                        process.kill();process.wait()
-                        raise RuntimeError('人声分离超过两小时；已释放工作进程，请缩短或重试')
-                    time.sleep(.5)
-                returncode=process.returncode
+        with stage('separation.gpu_model_inference', model=options['model'], python=python, worker=worker,
+                   recipe_hash=key, cache=cache, source_pcm_sha=source_sha):
+            with external_gpu(progress), log_path.open('w', encoding='utf-8') as log:
+                with subprocess.Popen([str(python), '-u', str(worker), str(cache / 'request.json')],
+                                      cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                      creationflags=getattr(subprocess,'CREATE_NO_WINDOW', 0)) as process:
+                    atomic(lease / 'owner.json', {'pid': os.getpid(), 'worker_pid': process.pid})
+                    deadline=time.monotonic()+7200;last_reported=5
+                    while process.poll() is None:
+                        try:
+                            with log_path.open('rb') as stream:
+                                stream.seek(max(0,log_path.stat().st_size-16384))
+                                tail=stream.read().decode('utf-8','replace')
+                            percent=model_progress_from_log(tail)
+                            if percent is not None:
+                                overall=5+percent*.87
+                                if overall>=last_reported+1:
+                                    progress(f'分离模型处理中 · {percent}%',overall);last_reported=overall
+                        except OSError:
+                            pass
+                        if time.monotonic()>deadline:
+                            process.kill();process.wait()
+                            raise RuntimeError('人声分离超过两小时；已释放工作进程，请缩短或重试')
+                        time.sleep(.5)
+                    returncode=process.returncode
         if returncode:
-            raise RuntimeError('人声分离失败；原曲与已有谱面已保留。' + log_path.read_text(encoding='utf-8')[-2000:])
-        return cached_result()
+            tail=log_path.read_text(encoding='utf-8')[-2000:]
+            event('child_process_failure','separation.gpu_model_inference',returncode=returncode,
+                  worker_log=file_identity(log_path),log_tail=tail)
+            raise RuntimeError('人声分离失败；原曲与已有谱面已保留。' + tail)
+        result=cached_result()
+        event('separation_result','separation.gpu_model_inference',manifest_id=result.get('id'),
+              performance=result.get('performance'),device=result.get('device'),stems=result.get('stems'))
+        return result
     finally:
         (lease / 'owner.json').unlink(missing_ok=True)
         lease.rmdir()

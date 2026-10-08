@@ -226,7 +226,7 @@ def package(directory, charts, audio_path, report, background=None, filenames=No
             path.unlink()
     archive = directory / 'malody-4k.mcz'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
-        z.writestr('0/', b'')
+        # No '0/' directory entry: mobile Malody rejects archives that carry one.
         for path in sorted(song.iterdir()):
             if path.name == 'generation.txt':
                 continue

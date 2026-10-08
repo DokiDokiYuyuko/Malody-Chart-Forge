@@ -17,18 +17,20 @@ import copy
 from io import BytesIO
 import zipfile
 from urllib.parse import quote
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request, Query, Body
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request, Query, Body, Depends
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from .paths import ROOT, PRESETS, WEIGHTS
 from .difficulty import PATTERN_CHOICES, V32_PATTERN_TAGS
-from .naming import chart_id as make_chart_id
+from .naming import chart_id as make_chart_id, DEFAULT_CHART_CREATOR, validate_creator
+from .http_metadata import creator_form
 from .inference_policy import V32_INFERENCE_POLICY
 
 app = FastAPI(title='Malody Chart Forge')
 pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='chart-generator')
 jobs = {}
 lock = threading.Lock()
+advanced_retry_lock = threading.Lock()
 scheduler_active = set()
 queue_sequence = 0
 MUG_WEIGHT_BYTES = 1839231053
@@ -58,8 +60,25 @@ def store(job):
     temporary.write_text(json.dumps(job, ensure_ascii=False), encoding='utf-8')
     temporary.replace(path)
 
+_parallel_gate_lock=threading.Lock()
+_parallel_gate_cache={'signature':None,'checked':0.0,'result':None}
+
 def parallel_benchmark_gate():
     path=ROOT/'benchmarks'/'latest.json'
+    try:
+        stat=path.stat();signature=(stat.st_mtime_ns,stat.st_size)
+    except OSError:
+        signature=None
+    now=time.monotonic()
+    with _parallel_gate_lock:
+        if (_parallel_gate_cache['signature']==signature and _parallel_gate_cache['result'] is not None
+                and now-_parallel_gate_cache['checked']<15):
+            return _parallel_gate_cache['result']
+        result=_parallel_benchmark_gate_uncached(path)
+        _parallel_gate_cache.update(signature=signature,checked=time.monotonic(),result=result)
+        return result
+
+def _parallel_benchmark_gate_uncached(path):
     try:
         result=json.loads(path.read_text(encoding='utf-8'))
         if result.get('v32_inference_policy') != V32_INFERENCE_POLICY:
@@ -86,8 +105,8 @@ def parallel_benchmark_gate():
     except (OSError,ValueError,KeyError,ImportError):
         return False,'并行生成尚未通过本机双任务硬件基准，队列以串行方式运行。'
 
-def configured_concurrency():
-    ready,_=parallel_benchmark_gate()
+def configured_concurrency(ready=None):
+    if ready is None:ready,_=parallel_benchmark_gate()
     if not ready:return 1
     try:
         value=json.loads((ROOT/'benchmarks'/'concurrency.json').read_text(encoding='utf-8')).get('value',1)
@@ -103,6 +122,13 @@ def legacy_source_ref(options):
     video_id=options.get('artwork_video_id')
     if isinstance(video_id,str) and re.fullmatch(r'[A-Za-z0-9_-]{11}',video_id):return {'type':'youtube','video_id':video_id}
     return None
+
+def job_audio_path(job_id):
+    """Resolve reusable audio from either a packaged or an incomplete job."""
+    directory = ROOT / 'outputs' / job_id
+    packaged = directory / '0' / 'audio.ogg'
+    working = directory / 'audio.ogg'
+    return packaged if packaged.is_file() or not working.is_file() else working
 
 for directory in (ROOT / 'outputs').iterdir():
     state = directory / 'job.json'
@@ -140,6 +166,9 @@ def worker(job_id, source, options):
     request_path=directory/'queue-worker.json'
     log_path=ROOT/'logs'/f'{job_id}.log'
     payload={'source':str(Path(source).resolve()),'directory':str(directory.resolve()),'options':options}
+    from .workflow_log import append_event, file_identity, context_for_file, attach_external, stage as trace_stage
+    append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_start','server.launch_queue_worker',
+                 source=file_identity(source),worker_script=str(ROOT/'tools'/'queue_worker.py'),options=options)
     request_path.write_text(json.dumps(payload,ensure_ascii=False),encoding='utf-8')
     environment=os.environ.copy();environment['PYTHONUTF8']='1'
     creation_flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
@@ -156,6 +185,8 @@ def worker(job_id, source, options):
                         with lock:
                             jobs[job_id].update(status='running',message=state[0],progress=state[1])
                             store(jobs[job_id])
+                        append_event(directory/'debug-log'/'workflow.jsonl',job_id,'progress','queue_worker.progress',
+                                     worker_pid=process.pid,message=state[0],progress=state[1])
                         previous=state
                 except (OSError,ValueError,TypeError):pass
                 time.sleep(.35)
@@ -173,37 +204,84 @@ def worker(job_id, source, options):
                         quality_preview=quality.get('preview',[]),quality_difficulty=quality.get('difficulty'))
                     store(jobs[job_id])
             raise RuntimeError(failure_reason or detail or f'生成工作进程退出，代码 {process.returncode}')
+        append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_end','server.queue_worker_process',
+                     status='completed',pid=process.pid,returncode=process.returncode,
+                     worker_log=file_identity(log_path))
         if not result_path.is_file():raise RuntimeError('生成工作进程没有返回曲包报告')
         result=json.loads(result_path.read_text(encoding='utf-8'))
         if options.get('_advanced'):
+            if options['_advanced'].get('task_type') == 'density_trial':
+                with lock:
+                    jobs[job_id].update(status='completed',message='密度校准实验完成',progress=100,
+                        density_trial=result,task_type='density_trial')
+                    store(jobs[job_id])
+                append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_end','server.publish_density_trial',
+                             status='completed',result=result)
+                return
+            if options['_advanced'].get('task_type') == 'music_analysis':
+                from .advanced import read as read_analysis, atomic as save_analysis
+                state_path=ROOT/'outputs/advanced'/options['_advanced']['project']['id']/'music-analysis'/(result['analysis_id']+'.json')
+                analysis=read_analysis(state_path);analysis.update(task_id=job_id);save_analysis(state_path,analysis)
+                with lock:
+                    jobs[job_id].update(status='completed',message='音乐输入与节奏分析已完成',progress=100,
+                        task_type='music_analysis',analysis_id=result['analysis_id'],music_analysis_status=result['status'],
+                        evidence_id=result['evidence_id'],timing_map_id=result['timing_map_id'],resolved_source=result['resolved_source'])
+                    store(jobs[job_id])
+                append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_end','server.publish_music_analysis',
+                             status='completed',analysis_id=result.get('analysis_id'),analysis_status=result.get('status'),
+                             evidence_id=result.get('evidence_id'),timing_map_id=result.get('timing_map_id'),
+                             resolved_source=result.get('resolved_source'),analysis_file=file_identity(state_path))
+                return
             if options['_advanced'].get('task_type') == 'separation_trial':
                 with lock:
                     jobs[job_id].update(status='completed', message='局部试分离已完成，可在原曲位置对比试听',
                         progress=100, trial_id=result['trial_id'], trial_manifest=result['trial_manifest'],
                         task_type='separation_trial')
                     store(jobs[job_id])
+                append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_end','server.publish_separation_trial',
+                             status='completed',trial_id=result.get('trial_id'),trial_manifest=result.get('trial_manifest'))
                 return
             if options['_advanced'].get('task_type') == 'separation':
                 with lock:
                     jobs[job_id].update(status='completed', message='音频分离已完成，可以试听并选择声部', progress=100, stem_set_id=result['stem_set_id'], stem_set=result['stem_set'], task_type='separation')
                     store(jobs[job_id])
+                append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_end','server.publish_stem_set',
+                             status='completed',stem_set_id=result.get('stem_set_id'),stem_set=result.get('stem_set'))
                 return
             from .advanced_api import commit_generated
-            revisions = commit_generated(options, result,job_id=job_id)
+            trace_context=context_for_file(directory/'debug-log'/'workflow.jsonl',job_id)
+            with attach_external(trace_context,'studio_service'):
+                with trace_stage('server.commit_generated_revisions',
+                                 variants=[row.get('variant') for row in result.get('advanced_result',[])],
+                                 result_count=len(result.get('advanced_result',[]))):
+                    revisions = commit_generated(options, result,job_id=job_id)
+            append_event(directory/'debug-log'/'workflow.jsonl',job_id,'revision_commit_result','server.commit_generated_revisions',
+                         revision_ids=revisions,result_variants=[row.get('variant') for row in result.get('advanced_result',[])])
             with lock:
                 jobs[job_id].update(status='completed',message='分段候选已生成，请在高级台选择版本',progress=100,
-                    advanced_revisions=list(dict.fromkeys(revisions + result.get('reused_revisions', []))),advanced_errors=result.get('errors',[]),
+                    advanced_revisions=list(dict.fromkeys(revisions + result.get('reused_revisions', []))),advanced_errors=result.get('errors',[]),advanced_warnings=result.get('warnings',[]),
                     advanced_reused_revisions=result.get('reused_revisions', []),
                     stem_set_id=result.get('stem_set_id'),section_plan_id=result.get('section_plan_id'),
-                    execution=result.get('execution'),elapsed_seconds=result.get('elapsed_seconds'))
+                    execution=result.get('execution'),elapsed_seconds=result.get('elapsed_seconds'),
+                    density_validation=[{'variant':row['variant'],**row['provenance']['density_validation']} for row in result['advanced_result'] if row.get('provenance',{}).get('density_validation')])
                 store(jobs[job_id])
             return
         if not (directory/'malody-4k.mcz').is_file():raise RuntimeError('生成工作进程没有生成 MCZ 曲包')
-        with lock:
-            jobs[job_id].update(status='completed',message='部分谱面已生成' if result['report'].get('partial') else '曲包已生成',progress=100,
-                report=result['report'],download=f'/api/jobs/{job_id}/download')
-            store(jobs[job_id])
+        trace_context=context_for_file(directory/'debug-log'/'workflow.jsonl',job_id)
+        with attach_external(trace_context,'studio_service'):
+            with trace_stage('server.publish_simple_package',partial=result['report'].get('partial'),
+                             charts=len(result['report'].get('charts',[])),package=directory/'malody-4k.mcz'):
+                with lock:
+                    jobs[job_id].update(status='completed',message='部分谱面已生成' if result['report'].get('partial') else '曲包已生成',progress=100,
+                        report=result['report'],download=f'/api/jobs/{job_id}/download')
+                    store(jobs[job_id])
+        append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_end','server.publish_simple_package',
+                     status='completed',package=file_identity(directory/'malody-4k.mcz'),
+                     partial=result['report'].get('partial'),chart_count=len(result['report'].get('charts',[])))
     except Exception as exc:
+        append_event(directory/'debug-log'/'workflow.jsonl',job_id,'node_error','server.finalize_job',
+                     status='failed',error_type=type(exc).__name__,error=str(exc),traceback=traceback.format_exc(),
+                     worker_log=file_identity(log_path))
         with lock:
             jobs[job_id].update(status='failed',message='生成失败',error=str(exc))
             store(jobs[job_id])
@@ -236,7 +314,7 @@ def resolve_source_ref(job):
     if kind == 'upload' and re.fullmatch(r'[0-9a-f]{32}\.[a-z0-9]{1,8}', str(ref.get('name', ''))):
         source = ROOT / 'uploads' / ref['name']
     elif kind == 'job_audio' and re.fullmatch(r'[0-9a-f]{32}', str(ref.get('job_id', ''))):
-        source = ROOT / 'outputs' / ref['job_id'] / '0' / 'audio.ogg'
+        source = job_audio_path(ref['job_id'])
     elif kind == 'youtube' and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(ref.get('video_id', ''))):
         from .music import begin, get, ready_audio
         video_id = ref['video_id']
@@ -288,15 +366,21 @@ def dispatch_next():
     for job_id in submissions:pool.submit(run_queued_job,job_id)
 
 def run_queued_job(job_id):
+    trace_path=ROOT/'outputs'/job_id/'debug-log'/'workflow.jsonl'
+    from .workflow_log import append_event, file_identity
     try:
         with lock:
             job = jobs.get(job_id)
             if not job or job.get('status') != 'running':
                 return
             options = dict(job.get('options', {}))
+        append_event(trace_path,job_id,'node_start','server.resolve_source_ref',source_ref=job.get('source_ref'))
         source = resolve_source_ref(job)
+        append_event(trace_path,job_id,'node_end','server.resolve_source_ref',status='completed',source=file_identity(source))
         worker(job_id, source, options)
     except Exception as exc:
+        append_event(trace_path,job_id,'node_error','server.prepare_and_dispatch',status='failed',
+                     error_type=type(exc).__name__,error=str(exc),traceback=traceback.format_exc())
         with lock:
             if job_id in jobs and jobs[job_id].get('status') not in ('cancelled', 'completed', 'failed'):
                 jobs[job_id].update(status='failed', message='任务准备失败', error=str(exc))
@@ -309,11 +393,27 @@ def run_queued_job(job_id):
 def enqueue_job(options, source_ref):
     return enqueue_jobs([(options, source_ref)])[0]
 
-def enqueue_jobs(entries):
+queue_reservations = {}
+
+def reserve_queue_capacity(request_id, count):
+    with lock:
+        used=sum(j.get('status') in ('queued','running','paused') for j in jobs.values())
+        held=sum(value for key,value in queue_reservations.items() if key!=request_id)
+        if used+held+count>100:raise HTTPException(429,'队列已满（最多 100 项），请等待或取消部分任务')
+        queue_reservations[request_id]=count
+
+def release_queue_capacity(request_id):
+    with lock:queue_reservations.pop(request_id,None)
+
+def enqueue_jobs(entries, reservation_id=None):
     """Reserve an entire submission before dispatching any independent leaf job."""
     global queue_sequence
+    from .simple_generation import freeze as freeze_simple
+    entries = [(options if options.get('_advanced') else freeze_simple(options), source)
+               for options, source in entries]
     with lock:
-        if sum(j.get('status') in ('queued', 'running', 'paused') for j in jobs.values()) + len(entries) > 100:
+        reserved=sum(value for key,value in queue_reservations.items() if key!=reservation_id)
+        if sum(j.get('status') in ('queued', 'running', 'paused') for j in jobs.values()) + reserved + len(entries) > 100:
             raise HTTPException(429, '队列已满（最多 100 项），请等待或取消部分任务')
         prepared=[]
         try:
@@ -336,6 +436,7 @@ def enqueue_jobs(entries):
                 store(job)
             raise
         for job in prepared: jobs[job['id']] = job
+        if reservation_id:queue_reservations.pop(reservation_id,None)
     dispatch_next()
     return [{'id': job['id']} for job in prepared]
 
@@ -347,7 +448,14 @@ def settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine='mu
              mug_difficulty=8, mug_style='ranked', mug_guidance=1.5, mug_eta=0,
              v32_difficulty=8, v32_temperature=.9, v32_top_p=.9,
              v32_column_temperature=.8, v32_cfg_scale=1, v32_year=2024,
-             v32_descriptors='', v32_negative_descriptors='', patterns=None, dynamic_enabled=False):
+             v32_descriptors='', v32_negative_descriptors='', patterns=None, dynamic_enabled=False, tail_trim_enabled=True,
+             nps_ranges='', parallel_streams=0, creator=DEFAULT_CHART_CREATOR):
+    try:
+        creator = validate_creator(creator)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if type(parallel_streams) is not int or not 0 <= parallel_streams <= 16:
+        raise HTTPException(400, 'parallel_streams 须为 0–16 的整数（0/1 为顺序生成）')
     if engine not in ('mug', 'v32'):
         raise HTTPException(400, '请选择有效的生成引擎')
     try:
@@ -385,6 +493,21 @@ def settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine='mu
                 raise HTTPException(400, f'{key} 的 {name} 必须是整数')
             normalized[name] = float(value) if name == 'rate' else int(value)
         normalized_rules[key] = normalized
+    try:
+        submitted_nps_ranges = json.loads(nps_ranges) if isinstance(nps_ranges,str) and nps_ranges.strip() else nps_ranges
+        from .nps_star_calibration import normalize_ranges
+        effective_rules={difficulty:{'rate':PRESETS[difficulty]['rate']} for difficulty in PRESETS}
+        for difficulty,values in normalized_rules.items():effective_rules[difficulty].update(values)
+        normalized_nps_ranges = normalize_ranges(submitted_nps_ranges or None,effective_rules)
+    except (TypeError,ValueError) as exc:
+        raise HTTPException(400, f'NPS 范围设置无效：{exc}')
+    # Existing report readers still expect one scalar target. Keep it equal to
+    # the band midpoint for V32; the new generator consumes the band itself.
+    # MuG keeps its existing scalar behavior even when this extra field exists.
+    if engine=='v32':
+        for difficulty,bounds in normalized_nps_ranges.items():
+            if difficulty in normalized_rules or (isinstance(submitted_nps_ranges,dict) and difficulty in submitted_nps_ranges):
+                normalized_rules.setdefault(difficulty,{})['rate']=(bounds['min']+bounds['max'])/2
     if patterns in (None, ''):
         selected_patterns = [pattern]
     else:
@@ -437,9 +560,11 @@ def settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine='mu
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     if not isinstance(dynamic_enabled,bool):raise HTTPException(400,'段落适配开关无效')
-    return {'dynamic_enabled':dynamic_enabled,'dynamic_strength':1.,'title': title, 'artist': artist or 'Unknown', 'difficulties': selected,
+    if not isinstance(tail_trim_enabled,bool):raise HTTPException(400,'裁尾开关无效')
+    return {'tail_trim_enabled':tail_trim_enabled,'dynamic_enabled':dynamic_enabled,'dynamic_strength':1.,'title': title, 'artist': artist or 'Unknown', 'difficulties': selected,
             'patterns': selected_patterns, 'artwork_video_id': artwork_id,
             'ln_ratio': ln_ratio, 'steps': steps, 'seed': seed, 'bpm': bpm, 'engine': engine,
+            'nps_ranges': normalized_nps_ranges, 'parallel_streams': parallel_streams, 'creator': creator,
             'difficulty_rules': normalized_rules, 'pattern': pattern, 'pattern_strength': int(pattern_strength),
             'mug_difficulty': float(mug_difficulty), 'mug_style': mug_style,
             'mug_guidance': float(mug_guidance), 'mug_eta': float(mug_eta),
@@ -498,7 +623,14 @@ def health():
         '缺少 V32 模型权重或部署校验文件，请运行“一键配置环境.bat”并选择 V32。')
     return {
         'api_version': 2,
-        'advanced_workflow_version': 7,
+        'nps_star_direct_version':1,'nps_star_mapping_id':'20261006-v4',
+        'advanced_workflow_version': 13,'music_workflow_version':2,'workflow_repair_version':3,
+        'model_head_serialization':'mania-column-hold-pairing-v1',
+        'candidate_source_policy':'model-heads-only-v3',
+        'generation_context_policy':'continuous-model-pass-v1',
+        'timing_reference_conditioning':'timing-context-only-v1',
+        'chart_quality_version':4,'accent_alignment_version':2,'density_validation_version':1,
+        'tail_trim_version':1,'library_version':3,'music_assets_version':1,
         'task_history_version': 1,
         'gpu_resident_version': 1,
         'ready': mug_ready or v32_ready_state,
@@ -528,15 +660,23 @@ def queue_status():
     with lock:
         items = [j for j in jobs.values() if j.get('status') in states]
         items.sort(key=lambda item: (item.get('queue_order', 0), item.get('created', '')))
-        parallel_enabled,parallel_reason=parallel_benchmark_gate()
-        return {'items': [{k: item.get(k) for k in ('id', 'title', 'artist', 'status', 'message',
-                                                     'progress', 'created', 'queue_order', 'error')}
-                          for item in items],
-                'running': sum(item.get('status') == 'running' for item in items),
-                'waiting': sum(item.get('status') in ('queued', 'paused') for item in items),
-                'paused': sum(item.get('status') == 'paused' for item in items),
-                'parallel_enabled': parallel_enabled, 'max_concurrency': 2 if parallel_enabled else 1,
-                'concurrency': configured_concurrency(), 'parallel_reason': parallel_reason}
+        rows=[]
+        for item in items:
+            row={k:item.get(k) for k in ('id','title','artist','status','message','progress','created','queue_order','error')}
+            options=item.get('options',{});snapshot=options.get('_advanced',{})
+            row.update(task_type=snapshot.get('task_type','generation' if snapshot else 'song'),
+                       project_id=snapshot.get('project',{}).get('id'),segment_name=snapshot.get('segment',{}).get('name'),
+                       variants=[v['key'] for v in snapshot.get('variants',[]) if isinstance(v,dict) and v.get('key')])
+            rows.append(row)
+        running=sum(item.get('status') == 'running' for item in items)
+        waiting=sum(item.get('status') in ('queued', 'paused') for item in items)
+        paused=sum(item.get('status') == 'paused' for item in items)
+    # GPU/driver checks may import torch and launch nvidia-smi; keep them out of
+    # the global jobs lock so a queue refresh cannot stall job state updates.
+    parallel_enabled,parallel_reason=parallel_benchmark_gate()
+    return {'items': rows, 'running': running, 'waiting': waiting, 'paused': paused,
+            'parallel_enabled': parallel_enabled, 'max_concurrency': 2 if parallel_enabled else 1,
+            'concurrency': configured_concurrency(), 'parallel_reason': parallel_reason}
 
 @app.post('/api/queue/concurrency')
 def set_queue_concurrency(payload: dict = Body(...)):
@@ -570,7 +710,7 @@ def resume_queue():
     return {'resumed': resumed, 'needs_source': needs_source}
 
 @app.get('/api/history')
-def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1, le=8),
+def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(12, ge=1, le=100),
                      q: str = Query('', max_length=200), engine: str = Query(''),
                      status: str = Query(''), difficulty: str = Query(''),
                      sort: str = Query('newest')):
@@ -580,37 +720,44 @@ def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1
     if status not in allowed_status or engine not in allowed_engine or sort not in allowed_sort:
         raise HTTPException(400, '曲包筛选条件无效')
     needle = q.casefold()
+    from .library import index as library_index, tombstones as library_tombstones
+    delivery_snapshots=library_index(ROOT)
+    deleted_deliveries=library_tombstones(ROOT)
     advanced_items=[]
     advanced_total_all=0
     # Advanced projects store final MCZ assemblies outside the ordinary job history.
     # Expose each actual export in the package library with an identity-safe preview target.
     from .advanced_api import store as advanced_store
     from .advanced import read as read_advanced
+    from .library_history import summary_cache
+    metadata = summary_cache(ROOT)
     for project_path in advanced_store.root.glob('*/project.json'):
         pid=project_path.parent.name
         if not re.fullmatch(r'[0-9a-f]{32}',pid):continue
         try:
-            project=read_advanced(project_path)
+            project=metadata.get(project_path, 'project', read_advanced)
         except (OSError,ValueError,KeyError):
             continue
         if not isinstance(project,dict) or project.get('id')!=pid:continue
-        project_matches=not needle or needle in (project.get('title','')+' '+project.get('artist','')).casefold()
+        project_matches=True
         assemblies=project.get('assemblies',[])
         if not isinstance(assemblies,list):continue
         for assembly in assemblies:
             if not isinstance(assembly,dict):continue
             aid=assembly.get('id','')
             if not isinstance(aid,str) or not re.fullmatch(r'[0-9a-f]{32}',aid):continue
+            if 'advanced-'+aid in deleted_deliveries:continue
             folder=advanced_store.directory(pid)/'assemblies'/aid
-            try:report=read_advanced(folder/'report.json')
+            try:report=metadata.get(folder/'report.json', 'report', read_advanced)
             except (OSError,ValueError):continue
             if not isinstance(report,dict):continue
+            report={**report,**{k:v for k,v in delivery_snapshots.get('advanced-'+aid,{}).items() if k in ('title','artist')}}
             charts=report.get('charts',[])
             if not isinstance(charts,list) or not charts or any(not isinstance(row,dict) for row in charts):continue
             if not (folder/'audio.ogg').is_file() or not (folder/'0').is_dir():continue
             if not any((folder/'0').glob('*.mc')):continue
             advanced_total_all+=1
-            if not project_matches:continue
+            if needle and needle not in (report.get('title',project.get('title',''))+' '+report.get('artist',project.get('artist',''))).casefold():continue
             engines={row.get('engine') for row in charts}
             if engine and engine!='advanced' and engine not in engines:continue
             if status and status!='completed':continue
@@ -618,20 +765,23 @@ def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1
             if difficulty and difficulty not in difficulties:continue
             level_names={'easy':'Easy','medium':'Medium','hard':'Hard','expert':'Expert','master':'Master','lunatic':'Lunatic'}
             advanced_items.append({'id':'advanced-'+aid,'type':'advanced','project_id':pid,
-                'assembly_id':aid,'title':project.get('title','高级制谱成品'),
-                'artist':project.get('artist',''),'status':'completed',
+                'assembly_id':aid,'title':report.get('title',assembly.get('title',project.get('title','高级制谱成品'))),
+                'artist':report.get('artist',assembly.get('artist',project.get('artist',''))),'status':'completed',
                 'created':assembly.get('created') or report.get('created',''),
                 'engine':'advanced','difficulties':difficulties,
                 'difficulty_labels':[level_names.get(value,value) for value in difficulties],'download':assembly.get('download') or f"/api/advanced/projects/{pid}/assemblies/{aid}/download",
                 'cover':f"/api/advanced/projects/{pid}/background" if project.get('background') else None,
-                'thumbnail':None,'segment_count':len(assembly.get('mapping',[])),
+                'thumbnail':None,'segment_count':assembly.get('segment_count',0),
                 'chart_count':len(charts),'duration':assembly.get('duration')})
+    metadata.flush()
     with lock:
         matches = []
         for job in jobs.values():
             if job.get('options', {}).get('_advanced'):
                 continue
-            if needle and needle not in (job.get('title', '') + ' ' + job.get('artist', '')).casefold():
+            if job['id'] in deleted_deliveries:continue
+            snapshot=delivery_snapshots.get(job['id'],job.get('report',{}))
+            if needle and needle not in (snapshot.get('title',job.get('title', '')) + ' ' + snapshot.get('artist',job.get('artist', ''))).casefold():
                 continue
             options = job.get('options', {})
             if engine and options.get('engine', 'mug') != engine:
@@ -651,7 +801,8 @@ def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1
         for job in matches:
             report=job.get('report',{});artwork=report.get('artwork',{})
             item={k:job[k] for k in ('id','title','artist','status','created') if k in job}
-            item.update(type='song',engine=job.get('options',{}).get('engine','mug'),
+            item.update({k:v for k,v in delivery_snapshots.get(job['id'],report).items() if k in ('title','artist')})
+            item.update(type='song',job_id=job['id'],engine=job.get('options',{}).get('engine','mug'),
                         difficulties=[d['key'] for d in report.get('difficulties',[])] or job.get('options',{}).get('difficulties',[]),
                         difficulty_labels=[d['label'] for d in report.get('difficulties',[])],
                         download=f"/api/jobs/{job['id']}/download" if job.get('status')=='completed' else None,
@@ -661,6 +812,31 @@ def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1
             except ValueError:video_id=None
             item['thumbnail']=f'https://i.ytimg.com/vi/{video_id}/hqdefault.jpg' if video_id else None
             ordinary_items.append(item)
+        # Explicit re-exports have a fresh delivery identity while sharing the
+        # original task archive. They must not revive that task's deleted ID.
+        extra_total=0
+        for record_id,snapshot in delivery_snapshots.items():
+            if record_id in deleted_deliveries or ':' not in record_id:continue
+            try:
+                from .library import locate
+                _,manifest,_=locate(ROOT,record_id)
+                source=manifest.get('source',{});job=jobs.get(source.get('job_id'))
+                if source.get('type')!='song' or not job or job.get('status')!='completed':continue
+                extra_total+=1
+                title=manifest['title'];artist=manifest.get('artist','')
+                if needle and needle not in (title+' '+artist).casefold():continue
+                actual_engine=job.get('options',{}).get('engine','mug')
+                if engine and actual_engine!=engine:continue
+                if status and status!='completed':continue
+                keys=[r['difficulty'] for r in manifest['charts']]
+                if difficulty and difficulty not in keys:continue
+                from urllib.parse import quote
+                ordinary_items.append({'id':record_id,'job_id':job['id'],'type':'song','title':title,'artist':artist,
+                    'status':'completed','created':manifest['created'],'engine':actual_engine,'difficulties':keys,
+                    'difficulty_labels':[PRESETS.get(k,{}).get('label',k) for k in keys],
+                    'download':'/api/library/download?record_id='+quote(record_id,safe=''),
+                    'cover':f"/api/jobs/{job['id']}/files/background.jpg" if job.get('report',{}).get('artwork',{}).get('status')=='ready' else None})
+            except (ValueError,OSError,KeyError):continue
         items_all=ordinary_items+advanced_items
         if sort=='oldest':items_all.sort(key=lambda row:row.get('created',''))
         elif sort=='title':items_all.sort(key=lambda row:(row.get('title','').casefold(),row.get('created','')))
@@ -669,7 +845,7 @@ def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1
         pages = max(1, (total + page_size - 1) // page_size)
         page = min(page, pages)
         items=items_all[(page-1)*page_size:page*page_size]
-        ordinary_total_all=sum(not j.get('options', {}).get('_advanced') for j in jobs.values())
+        ordinary_total_all=sum(not j.get('options', {}).get('_advanced') and j['id'] not in deleted_deliveries for j in jobs.values())+extra_total
         return {'items': items, 'total': total, 'total_all': ordinary_total_all+advanced_total_all, 'page': page,
                 'pages': pages, 'page_size': page_size, 'filters': {'engine': engine, 'status': status,
                                                                     'difficulty': difficulty, 'sort': sort}}
@@ -678,9 +854,8 @@ def paginated_history(page: int = Query(1, ge=1), page_size: int = Query(8, ge=1
 def task_history(page:int=Query(1,ge=1),page_size:int=Query(10,ge=1,le=100),
                  q:str=Query('',max_length=200),type:str=Query(''),project_id:str=Query('')):
     from .advanced_api import store as project_store
-    from .task_history import history_page
-    import copy
-    with lock:records=copy.deepcopy(list(jobs.values()))
+    from .task_history import history_page, history_snapshot
+    with lock:records=history_snapshot(jobs.values())
     try:return history_page(project_store,records,page,page_size,q,type,project_id)
     except (ValueError,TypeError,KeyError,OSError) as exc:raise HTTPException(400,str(exc))
 
@@ -688,9 +863,8 @@ def task_history(page:int=Query(1,ge=1),page_size:int=Query(10,ge=1,le=100),
 @app.post('/api/task-history/open-folder')
 def task_history_open_folder(payload:dict=Body(...)):
     from .advanced_api import store as project_store
-    from .task_history import open_folder
-    import copy
-    with lock:records=copy.deepcopy(list(jobs.values()))
+    from .task_history import open_folder, history_snapshot
+    with lock:records=history_snapshot(jobs.values())
     try:return open_folder(project_store,ROOT,records,payload)
     except (ValueError,TypeError,KeyError,OSError) as exc:raise HTTPException(400,str(exc))
     except RuntimeError as exc:raise HTTPException(409,str(exc))
@@ -702,8 +876,10 @@ def storage_usage():
         return sum(path.stat().st_size for path in directory.rglob('*') if path.is_file())
     outputs = ROOT / 'outputs'
     uploads = ROOT / 'uploads'
+    music_assets=ROOT/'data'/'音乐'
     return {'outputs_bytes': total_bytes(outputs), 'uploads_bytes': total_bytes(uploads),
-            'total_bytes': total_bytes(outputs) + total_bytes(uploads),
+            'music_bytes':total_bytes(music_assets),
+            'total_bytes': total_bytes(outputs) + total_bytes(uploads)+total_bytes(music_assets),
             'free_bytes': shutil.disk_usage(ROOT).free}
 
 @app.get('/api/jobs/{job_id}')
@@ -723,14 +899,16 @@ async def upload(file: UploadFile = File(...), title: str = Form(...), artist: s
                  v32_top_p: float = Form(.9), v32_column_temperature: float = Form(.8),
                  v32_cfg_scale: float = Form(1), v32_year: int = Form(2024),
                  v32_descriptors: str = Form(''), v32_negative_descriptors: str = Form(''),
-                 patterns: str = Form(''), dynamic_enabled: bool = Form(True)):
+                 patterns: str = Form(''), dynamic_enabled: bool = Form(True), tail_trim_enabled: bool = Form(True),
+                 nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form)):
     options = settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine, artwork_url,
                        difficulty_rules, pattern, pattern_strength, mug_difficulty, mug_style,
                        mug_guidance, mug_eta, v32_difficulty, v32_temperature, v32_top_p,
                        v32_column_temperature, v32_cfg_scale, v32_year,
-                       v32_descriptors, v32_negative_descriptors, patterns, dynamic_enabled)
+                       v32_descriptors, v32_negative_descriptors, patterns, dynamic_enabled, tail_trim_enabled,
+                       nps_ranges, parallel_streams, creator)
     extension = Path(file.filename or '').suffix.lower()
-    if extension not in ('.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aac', '.opus'):
+    if extension not in ('.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aac', '.opus', '.webm'):
         raise HTTPException(400, '请选择 MP3、WAV、FLAC、M4A、OGG、AAC 或 OPUS 音频')
     ensure_engine(options)
     source = ROOT / 'uploads' / (uuid.uuid4().hex + extension)
@@ -744,6 +922,12 @@ async def upload(file: UploadFile = File(...), title: str = Form(...), artist: s
                 target.write(chunk)
         if not size:
             raise HTTPException(400, '音频文件为空')
+        from .music_assets import identify
+        asset=identify(source,file.filename)
+        if asset:
+            options['_music_asset']={'id':asset['id'],'sha256':asset['sha256']}
+            if not options.get('artwork_video_id') and asset.get('platform')=='youtube':
+                options['artwork_video_id']=asset.get('video_id')
         # Retain only this job's upload basename so deletion can safely clean up.
         options['_source_upload'] = source.name
         return new_job(source, options)
@@ -764,7 +948,8 @@ def reference(difficulties: str = Form('["easy","normal","hard"]'), ln_ratio: fl
               v32_top_p: float = Form(.9), v32_column_temperature: float = Form(.8),
               v32_cfg_scale: float = Form(1), v32_year: int = Form(2024),
               v32_descriptors: str = Form(''), v32_negative_descriptors: str = Form(''),
-              patterns: str = Form(''), dynamic_enabled: bool = Form(True)):
+              patterns: str = Form(''), dynamic_enabled: bool = Form(True), tail_trim_enabled: bool = Form(True),
+              nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form)):
     source = ROOT / 'uploads' / 'reference-sirius.m4a'
     if not source.is_file():
         raise HTTPException(404, '参考音轨尚未准备完成')
@@ -774,11 +959,129 @@ def reference(difficulties: str = Form('["easy","normal","hard"]'), ln_ratio: fl
                        v32_difficulty=v32_difficulty, v32_temperature=v32_temperature, v32_top_p=v32_top_p,
                        v32_column_temperature=v32_column_temperature, v32_cfg_scale=v32_cfg_scale,
                        v32_year=v32_year, v32_descriptors=v32_descriptors,
-                       v32_negative_descriptors=v32_negative_descriptors, patterns=patterns, dynamic_enabled=dynamic_enabled)
+                       v32_negative_descriptors=v32_negative_descriptors, patterns=patterns, dynamic_enabled=dynamic_enabled, tail_trim_enabled=tail_trim_enabled,
+                       nps_ranges=nps_ranges, parallel_streams=parallel_streams, creator=creator)
     ensure_engine(options)
     options['source'] = 'https://www.youtube.com/watch?v=UKZt1vq8bKI'
     options['artwork_video_id'] = 'UKZt1vq8bKI'
     return new_job(source, options)
+
+def retry_advanced_job(original):
+    """Retry a frozen task once; never apply a stale segment or mutate its options."""
+    import copy
+    from .advanced_api import store
+    from .audio_bounds import effective_segment
+    with advanced_retry_lock:
+        options=copy.deepcopy(original.get('options', {}))
+        snapshot=options['_advanced'];pid=snapshot['project']['id']
+        try:
+            current_project=store.load(pid)
+            kind=snapshot.get('task_type','generation')
+            if kind == 'separation_trial':
+                from .separation_trials import validate_snapshot
+                validate_snapshot(snapshot)
+            if kind not in ('separation', 'separation_trial', 'music_analysis'):
+                from .generation_context import continuous
+                continuous_snapshot=continuous(snapshot)
+                frozen_members=snapshot.get('member_segments')
+                if (('generation_context_policy' in snapshot or 'member_segments' in snapshot)
+                        and not continuous_snapshot):
+                    raise ValueError('连续推理快照缺少受支持的完整策略')
+                if continuous_snapshot:
+                    if 'member_segments' in snapshot:
+                        if not isinstance(frozen_members,list) or not frozen_members:
+                            raise ValueError('连续推理成员快照无效')
+                        members=frozen_members
+                    else:
+                        members=[snapshot['segment']]
+                    if snapshot['segment'].get('id')!=members[0].get('id'):
+                        raise ValueError('连续推理首个成员与冻结片段不一致')
+                    project_segments=current_project.get('segments')
+                    if not isinstance(project_segments,list):
+                        raise ValueError('当前项目片段布局无效')
+                    by_id={}
+                    for part in project_segments:
+                        if isinstance(part,dict) and isinstance(part.get('id'),str):
+                            by_id.setdefault(part['id'],[]).append(part)
+                    for frozen in members:
+                        if not isinstance(frozen,dict) or not isinstance(frozen.get('id'),str):
+                            raise ValueError('连续推理成员 ID 无效')
+                        matches=by_id.get(frozen['id'],[])
+                        if len(matches)!=1:
+                            raise ValueError('连续推理成员已删除或 ID 不唯一')
+                        current=matches[0]
+                        if any(current.get(key)!=frozen.get(key) for key in ('start_sample','end_sample')):
+                            raise ValueError('连续推理成员范围已变化，请从当前片段重新生成')
+                        if (type(frozen.get('start_sample')) is not int or type(frozen.get('end_sample')) is not int
+                                or type(current.get('start_sample')) is not int or type(current.get('end_sample')) is not int):
+                            raise ValueError('连续推理成员范围无效')
+                        if frozen.get('included') is not True or current.get('included') is not True:
+                            raise ValueError('连续推理成员已从拼接中排除')
+                        if effective_segment(current_project,current) is None:
+                            raise ValueError('连续推理成员已被静音尾段策略排除')
+                    source_descriptors=[]
+                    if snapshot.get('source') is not None:
+                        source_descriptors.append(snapshot['source'])
+                    if 'input_sources' in snapshot:
+                        if not isinstance(snapshot['input_sources'],list):
+                            raise ValueError('连续推理来源快照无效')
+                        source_descriptors.extend(snapshot['input_sources'])
+                    if source_descriptors:
+                        from .separation import resolve_source
+                        identity_fields=('source_id','source_role','role','stem_set_id','parent_source_id',
+                                         'pcm_sha','file_sha256','frames','frame_count','sample_rate','origin_sample')
+                        for frozen_source in source_descriptors:
+                            if (not isinstance(frozen_source,dict)
+                                    or not isinstance(frozen_source.get('source_id'),str)
+                                    or not (frozen_source.get('pcm_sha') or frozen_source.get('file_sha256'))):
+                                raise ValueError('连续推理来源身份不完整')
+                            current_source=resolve_source(store,pid,frozen_source['source_id'])
+                            if any(key in frozen_source and frozen_source.get(key)!=current_source.get(key)
+                                   for key in identity_fields):
+                                raise ValueError('连续推理来源已变化，请从当前来源重新生成')
+                else:
+                    current_segment=store.segment(current_project,snapshot['segment']['id'])
+                    if effective_segment(current_project,current_segment) is None:
+                        return {'status':'skipped','message':'静音尾段已排除，无需生成','inference_count':0}
+                    if any(current_segment[k]!=snapshot['segment'][k] for k in ('start_sample','end_sample')):
+                        raise ValueError('片段范围已变化，请从当前片段重新生成，不可重试旧范围')
+            for key in ('samples','source_pcm_sha256'):
+                if snapshot['project'].get(key) is not None and current_project.get(key)!=snapshot['project'][key]:
+                    raise ValueError('原曲已变化，请重新选择片段生成')
+            source=store.directory(pid)/'source.wav'
+            if not source.is_file():raise ValueError('高级项目原音频缺失')
+            if kind not in ('separation','separation_trial','music_analysis'):
+                from .separation import resolve_source
+                snapshot['project']['tail_trim']=copy.deepcopy(current_project['tail_trim'])
+                snapshot['original_source']=resolve_source(store,pid,'original')
+        except (ValueError,OSError,KeyError,TypeError,IndexError,AttributeError) as exc:raise HTTPException(409,str(exc))
+        with lock:
+            existing=next((j for j in jobs.values() if j.get('status') in ('queued','paused','running')
+                and j.get('options',{}).get('_advanced',{}).get('retry_of')==original['id']),None)
+            if existing:return {'id':existing['id'],'reused':True}
+        if kind == 'music_analysis':
+            if snapshot.get('separation_settings'):
+                from .separation import deployment
+                try:deployment(snapshot['separation_settings']['model'])
+                except (OSError,ValueError,KeyError,RuntimeError) as exc:raise HTTPException(409,str(exc))
+        elif kind not in ('separation', 'separation_trial'):
+            ensure_engine(options)
+        else:
+            from .separation import deployment, validated_settings
+            try:deployment(validated_settings(snapshot.get('settings',{}))['model'])
+            except (OSError,ValueError,KeyError,TypeError,RuntimeError) as exc:raise HTTPException(409,str(exc))
+        snapshot['retry_of']=original['id']
+        if kind == 'generation' and snapshot.get('batch_id'):
+            # A retry owns new revisions. Keep its parent's submission identity
+            # as lineage, never label the new output with the parent's batch.
+            snapshot['retry_parent_submission']={key:snapshot[key] for key in
+                ('batch_id','request_id','batch_request_hash','initial_plan_id') if key in snapshot}
+            snapshot.update(batch_id=uuid.uuid4().hex,request_id=uuid.uuid4().hex,
+                            activate_initial=False)
+            snapshot.pop('batch_request_hash',None)
+            snapshot.pop('initial_plan_id',None)
+        return enqueue_job(options,{'type':'project_file','path':f'outputs/advanced/{pid}/source.wav'})
+
 
 @app.post('/api/jobs/{job_id}/regenerate')
 def regenerate_job(job_id: str):
@@ -791,38 +1094,20 @@ def regenerate_job(job_id: str):
         raise HTTPException(409, '只有已完成、失败或中断的任务可以重试')
     options = dict(original.get('options', {}))
     if options.get('_advanced'):
-        from .advanced_api import store
-        snapshot=options['_advanced'];pid=snapshot['project']['id']
-        try:
-            if snapshot.get('task_type') == 'separation_trial':
-                from .separation_trials import validate_snapshot
-                validate_snapshot(snapshot)
-                current_project=store.load(pid)
-                if (current_project['samples'] != snapshot['project']['samples'] or
-                        current_project['source_pcm_sha256'] != snapshot['project']['source_pcm_sha256']):
-                    raise ValueError('试分离原曲已变化，请重新选择范围提交')
-            if snapshot.get('task_type') not in ('separation', 'separation_trial'):store.segment(store.load(pid),snapshot['segment']['id'])
-            source=store.directory(pid)/'source.wav'
-            if not source.is_file():raise ValueError('高级项目原音频缺失')
-        except ValueError as exc:raise HTTPException(409,str(exc))
-        if snapshot.get('task_type') not in ('separation', 'separation_trial'):
-            ensure_engine(options)
-        else:
-            from .separation import deployment, validated_settings
-            try:
-                separation_settings=validated_settings(snapshot.get('settings',{}))
-                deployment(separation_settings['model'])
-            except (OSError,ValueError,KeyError,TypeError,RuntimeError) as exc:
-                raise HTTPException(409,str(exc))
-        return enqueue_job(options,original.get('source_ref') or {'type':'project_file','path':f'outputs/advanced/{pid}/source.wav'})
+        return retry_advanced_job(original)
+    from .quality_workflow import candidate_contract
+    # A new regeneration uses repaired candidate sourcing; the old task and its
+    # archived parameter snapshot remain unchanged.
+    options['candidate_policy']=candidate_contract()
+    options.setdefault('tail_trim_enabled',True)
     source_job_id = None
     if state == 'completed':
-        source = ROOT / 'outputs' / job_id / '0' / 'audio.ogg'
+        source = job_audio_path(job_id)
         source_job_id = job_id
     else:
         parent_id = options.get('_reuse_source_job_id')
         if isinstance(parent_id, str) and re.fullmatch(r'[0-9a-f]{32}', parent_id):
-            source = ROOT / 'outputs' / parent_id / '0' / 'audio.ogg'
+            source = job_audio_path(parent_id)
             source_job_id = parent_id
         else:
             upload_name = options.get('_source_upload')
@@ -928,6 +1213,14 @@ def regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={}
     with lock:
         job=dict(get_job(job_id))
     if job.get('status')!='completed': raise HTTPException(409,'只有已完成的曲包可以单档迭代')
+    if job.get('options',{}).get('direct_v32_policy'):
+        raise HTTPException(409,'该曲包使用独立星级生成；请修改 NPS 上下限后新建生成任务')
+    requested_creator = None
+    if 'creator' in payload:
+        try:
+            requested_creator = validate_creator(payload['creator'])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     row=_chart_row(job,key)
     if row is None: raise HTTPException(409,'该排键与难度组合不在当前曲包中')
     identifier=row.get('chart_id') or row['key']
@@ -940,11 +1233,13 @@ def regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={}
     if not cache_path.is_file(): raise HTTPException(409,'该曲包没有共享母谱缓存，请重新生成后再使用单档迭代')
     try: cache=json.loads(cache_path.read_text(encoding='utf-8'))
     except (OSError,ValueError): raise HTTPException(409,'单档生成缓存损坏，请重新生成曲包')
+    simple_revision=None
     try:
         seed=payload.get('seed',job['options'].get('seed',20261001))
         if isinstance(seed,bool) or not isinstance(seed,int) or not 0<=seed<=2147483640: raise ValueError()
         from .pipeline import _variant_seed
-        seed=_variant_seed(seed,pattern)
+        if not cache.get('simple_generation_policy') or len(job['options'].get('patterns',[]))>1:
+            seed=_variant_seed(seed,pattern)
         supplied=payload.get('rule',{})
         if not isinstance(supplied,dict) or set(supplied)-{'rate','chord','gap','peak','hold_ms'}: raise ValueError()
         existing=job['options'].get('difficulty_rules',{}).get(difficulty_key,{})
@@ -956,26 +1251,40 @@ def regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={}
         candidates=[]
         for timestamp,strength,originals in cache['candidates']:
             candidates.append((float(timestamp),float(strength),[Note(float(n[0]),int(n[1]),float(n[2]) if n[2] is not None else None) for n in originals]))
-        if cache.get('section_plan'):
+        if not any(originals for _,_,originals in candidates):
+            raise HTTPException(409,'母谱缓存没有可用模型音符，请重新生成此谱面')
+        selection_policy='model_only'
+        if cache.get('section_plan') or selection_policy=='model_only':
             from .adaptive_difficulty import calibrate_adaptive
-            notes,adjustment=calibrate_adaptive(candidates,float(cache['duration_ms']),difficulty_key,float(job['options'].get('ln_ratio',.15)),seed,rule,pattern,cache['section_plan'])
+            notes,adjustment=calibrate_adaptive(candidates,float(cache['duration_ms']),difficulty_key,
+                float(job['options'].get('ln_ratio',.15)),seed,rule,pattern,cache.get('section_plan'),
+                selection_policy=selection_policy,audio_vote_cap=0.)
         else:
             notes,adjustment=calibrate(candidates,float(cache['duration_ms']),difficulty_key,
                 float(job['options'].get('ln_ratio',.15)),seed,rule,pattern=pattern)
+        if cache.get('simple_generation_policy'):
+            from .simple_generation import finish_rule_revision
+            revision_settings={**job['options'],'difficulty_rules':{
+                **job['options'].get('difficulty_rules',{}),difficulty_key:rule}}
+            notes,simple_revision=finish_rule_revision(notes,candidates,cache,revision_settings,directory,
+                                                     difficulty_key,pattern,adjustment)
+        if not notes:
+            raise HTTPException(409,'当前规则下没有合法模型候选，请检查设置或重新生成')
     except (KeyError,TypeError,ValueError,OverflowError):
         raise HTTPException(400,'单档种子或生成规则无效')
     label=DIFFICULTY_PRESETS[difficulty_key]['label']
-    from .naming import chart_stem
-    version_name=chart_stem(job['title'],job['options'].get('engine','mug'),pattern,difficulty_key)
+    from .naming import chart_label
+    version_name=chart_label(pattern,difficulty_key)
     if cache.get('engine')=='v32':
         from .mapperatorinator import serialize_with_timing
         timing=cache.get('timings',{}).get(difficulty_key)
         if not timing: raise HTTPException(409,'V32 分段 BPM 缓存缺失，无法单独重建此难度')
         chart=serialize_with_timing(notes,job['title'],job['artist'],version_name,timing)
-        chart['meta']['creator']='Malody Chart Forge / Mapperatorinator V32 (AI)'
+        chart['meta']['creator']=row.get('creator',job['options'].get('creator','Malody Chart Forge / Mapperatorinator V32 (AI)'))
     else:
         chart=serialize(notes,job['title'],job['artist'],version_name,float(cache['bpm']))
-        chart['meta']['creator']='Malody Chart Forge / MuG Diffusion v1.0.0'
+        chart['meta']['creator']=row.get('creator',job['options'].get('creator','Malody Chart Forge / MuG Diffusion v1.0.0'))
+    chart['meta']['creator']=validate_creator(requested_creator if requested_creator is not None else chart['meta']['creator'])
     validation=validate_chart(chart,float(cache['duration_ms']))
     stats=chart_stats(notes,float(cache['duration_ms'])/1000)
     waveform=sample_rate=None
@@ -988,11 +1297,13 @@ def regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={}
     from .quality import assess
     alerts=assess(notes,float(cache['duration_ms'])/1000,adjustment['target_active_nps'],waveform,sample_rate,chart,difficulty_key)
     for alert in alerts: alert.update(pattern=pattern,chart_id=identifier)
-    report=copy.deepcopy(job.get('report',{})); row=next((item for item in _chart_rows(job) if (item.get('chart_id') or item['key'])==identifier),None)
+    report=copy.deepcopy(job.get('report',{})); row=next((item for item in _chart_rows({'report':report}) if (item.get('chart_id') or item['key'])==identifier),None)
     if row is None: raise HTTPException(409,'曲包报告中找不到目标难度')
     original_row=copy.deepcopy(row)
+    row['creator']=chart['meta']['creator']
     row.update(stats,validation=validation,difficulty_adjustment=adjustment,quality_alerts=alerts,
                model_raw_notes=cache.get('raw_count',cache.get('raw_counts',{}).get(difficulty_key,row.get('model_raw_notes',0))))
+    if simple_revision:row.update(simple_revision)
     report.setdefault('quality_alerts',[])
     report['quality_alerts']=[a for a in report['quality_alerts'] if a.get('chart_id')!=identifier]+alerts
     version_dir=_version_directory(job_id,identifier);version_dir.mkdir(parents=True,exist_ok=True)
@@ -1000,7 +1311,7 @@ def regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={}
     if not manifest.get('versions'):
         original_chart=_chart_disk_path(job_id,original_row); original_archive=directory/'malody-4k.mcz'
         if not original_chart.is_file() or not original_archive.is_file(): raise HTTPException(409,'当前难度或曲包文件缺失')
-        initial_stats={field:original_row.get(field) for field in ('notes','holds','ln_ratio','average_nps','peak_nps','lanes','density','quality_alerts','difficulty_adjustment','validation')}
+        initial_stats={field:original_row.get(field) for field in ('notes','holds','ln_ratio','average_nps','peak_nps','lanes','density','quality_alerts','difficulty_adjustment','validation','density_validation','quality_summary')}
         (version_dir/'v1.mc').write_bytes(original_chart.read_bytes())
         shutil.copy2(original_archive,version_dir/'v1.mcz')
         (version_dir/'v1.json').write_text(json.dumps({'version':1,'seed':job['options'].get('seed'),
@@ -1012,7 +1323,7 @@ def regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={}
     (version_dir/f'v{new_version}.mc').write_text(json.dumps(chart,ensure_ascii=False,indent=2),encoding='utf-8')
     preview=[[round(n.start,2),n.lane,round(n.end,2) if n.end else None] for n in notes]
     version_data={'version':new_version,'seed':seed,'model_version':cache.get('model_version'),
-        'parameters':rule,'stats':{field:row.get(field) for field in ('notes','holds','ln_ratio','average_nps','peak_nps','lanes','density','quality_alerts','difficulty_adjustment','validation')},
+        'parameters':rule,'stats':{field:row.get(field) for field in ('notes','holds','ln_ratio','average_nps','peak_nps','lanes','density','quality_alerts','difficulty_adjustment','validation','density_validation','quality_summary')},
         'preview':preview,'created':datetime.now(timezone.utc).isoformat()}
     (version_dir/f'v{new_version}.json').write_text(json.dumps(version_data,ensure_ascii=False),encoding='utf-8')
     chart_path.write_text(json.dumps(chart,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -1066,6 +1377,7 @@ def restore_difficulty_version(job_id: str,key: str,payload: dict = Body(...)):
     validate_chart(chart,float(job['report']['duration'])*1000)
     report=job['report']
     row.update(version_data['stats']);report.setdefault('previews',{})[identifier]=version_data['preview']
+    row['creator']=chart['meta']['creator']
     report.setdefault('active_versions',{})[identifier]=version
     report.setdefault('quality_alerts',[])
     report['quality_alerts']=[a for a in report['quality_alerts'] if a.get('chart_id')!=identifier]+(version_data['stats'].get('quality_alerts') or [])
@@ -1093,9 +1405,7 @@ def download_difficulty_version(job_id: str,key: str,filename: str):
         try: chart=json.loads(chart_file.read_text(encoding='utf-8'))
         except (OSError,ValueError): raise HTTPException(404,'版本谱面文件不存在或损坏')
         data,chart_filename=_single_chart_mcz(job_id,row,chart)
-        return Response(content=data,media_type='application/octet-stream',
-            headers={'Content-Disposition':"attachment; filename*=UTF-8''"+
-                quote(Path(row.get('filename',chart_filename)).stem+f'_v{version}.mcz')})
+        return published_single_chart(job,row,data,key+':v'+str(version),version)
     path=version_dir/filename
     if not path.is_file() and filename=='v1.mc': path=_chart_disk_path(job_id,row)
     if not path.is_file(): raise HTTPException(404,'版本文件不存在')
@@ -1143,6 +1453,10 @@ def delete_job(job_id: str):
             candidate = (ROOT / 'uploads' / upload_name).resolve()
             if candidate.parent == (ROOT / 'uploads').resolve():
                 upload_path = candidate
+        from .library import remove, index as library_index
+        for record_id in list(library_index(ROOT)):
+            if record_id==job_id or record_id.startswith(job_id+':'):
+                remove(ROOT,record_id)
         shutil.rmtree(directory)
         if upload_path:
             upload_path.unlink(missing_ok=True)
@@ -1151,11 +1465,121 @@ def delete_job(job_id: str):
 
 @app.get('/api/jobs/{job_id}/download')
 def download(job_id: str):
+    from .library import is_deleted
+    if is_deleted(ROOT,job_id):raise HTTPException(410,'曲包已删除，请明确重新导出')
     job = get_job(job_id)
     if job['status'] != 'completed':
         raise HTTPException(409, '曲包尚未生成')
-    return FileResponse(ROOT / 'outputs' / job_id / 'malody-4k.mcz', media_type='application/octet-stream',
-                        filename=job.get('report',{}).get('download_name') or f'{job["title"]}-4K.mcz')
+    from .library import publish
+    directory=ROOT/'outputs'/job_id
+    report=json.loads((directory/'report.json').read_text(encoding='utf-8'))
+    _,manifest,archive=publish(ROOT,job_id,directory/'malody-4k.mcz',report,job.get('created'),{'type':'song','job_id':job_id})
+    return FileResponse(archive,media_type='application/octet-stream',filename=manifest['archive'])
+
+
+@app.post('/api/library/open-folder')
+def library_open_folder(payload:dict=Body(...)):
+    if set(payload)!={'record_id'} or not isinstance(payload.get('record_id'),str):raise HTTPException(400,'仅接受曲包记录 ID')
+    from .library import open_folder
+    try:return open_folder(ROOT,payload['record_id'])
+    except (ValueError,OSError,KeyError) as exc:raise HTTPException(400,str(exc))
+
+
+@app.post('/api/library/delete')
+def delete_library_records(payload:dict=Body(...)):
+    ids=payload.get('record_ids')
+    if set(payload)!={'record_ids'} or not isinstance(ids,list) or not 1<=len(ids)<=500 or any(not isinstance(i,str) or not 1<=len(i)<=180 for i in ids):
+        raise HTTPException(400,'仅接受 1–500 个曲包记录 ID')
+    from .library import index, locate, is_deleted, delete_delivery
+    rows=[]
+    for record_id in dict.fromkeys(ids):
+        try:
+            source=None
+            if is_deleted(ROOT,record_id):
+                rows.append(delete_delivery(ROOT,record_id));continue
+            catalog=index(ROOT)
+            if record_id in catalog:
+                # Missing/corrupt contents remain visible for diagnosis; never
+                # infer a client-supplied directory or delete source archives.
+                _,manifest,_=locate(ROOT,record_id);source=manifest.get('source',{})
+            elif re.fullmatch(r'[0-9a-f]{32}',record_id):
+                job=get_job(record_id)
+                if job.get('status')!='completed':raise ValueError('仅能删除已完成曲包；任务仍保留在生成队列')
+                source={'type':'song','job_id':record_id}
+            else:raise ValueError('曲包记录不存在或尚未发布')
+            if source.get('type')=='song':
+                with lock:job=jobs.get(source.get('job_id'))
+                if job and job.get('status')!='completed':raise ValueError('运行中的任务不能通过曲包删除入口清理')
+            elif source.get('type')=='advanced':
+                from .advanced_api import store as project_store
+                from .advanced import identifier
+                p=project_store.load(identifier(source['project_id']))
+                if not any(a.get('id')==source['assembly_id'] for a in p.get('assemblies',[])):raise ValueError('成品身份不属于该项目')
+            else:raise ValueError('曲包来源身份无效')
+            rows.append(delete_delivery(ROOT,record_id,source))
+        except HTTPException as exc:rows.append({'record_id':record_id,'deleted':False,'error':str(exc.detail)})
+        except (ValueError,OSError,KeyError) as exc:rows.append({'record_id':record_id,'deleted':False,'error':str(exc)})
+    return {'results':rows}
+
+
+@app.get('/api/library/download')
+def download_registered_delivery(record_id:str):
+    from .library import locate, is_deleted
+    if is_deleted(ROOT,record_id):raise HTTPException(410,'曲包已删除，请明确重新导出')
+    try:
+        _,manifest,archive=locate(ROOT,record_id)
+        return FileResponse(archive,media_type='application/octet-stream',filename=manifest['archive'])
+    except (ValueError,OSError,KeyError) as exc:raise HTTPException(404,str(exc))
+
+
+@app.post('/api/jobs/{job_id}/export')
+def explicit_job_export(job_id:str):
+    job=get_job(job_id)
+    if job.get('status')!='completed':raise HTTPException(409,'曲包尚未生成')
+    from .library import publish, is_deleted, index
+    # Repeated explicit exports reuse the latest live full package. Deleting
+    # it and exporting again creates another identity, never revives an old ID.
+    record_id=job_id
+    if is_deleted(ROOT,record_id):
+        matches=[rid for rid,row in index(ROOT).items() if row.get('source',{}).get('job_id')==job_id and
+                 row.get('source',{}).get('explicit_export') and not is_deleted(ROOT,rid)]
+        record_id=matches[-1] if matches else job_id+':export-'+uuid.uuid4().hex
+    directory=ROOT/'outputs'/job_id
+    report=json.loads((directory/'report.json').read_text(encoding='utf-8'))
+    from datetime import datetime, timezone
+    _,_,_=publish(ROOT,record_id,directory/'malody-4k.mcz',report,
+        datetime.now(timezone.utc).isoformat() if record_id!=job_id else job.get('created'),
+        {'type':'song','job_id':job_id,'explicit_export':True})
+    from urllib.parse import quote
+    return {'record_id':record_id,'download':'/api/library/download?record_id='+quote(record_id,safe='')}
+
+
+_job_spectra={}
+def job_spectrum(job_id):
+    identifier=__import__('malody_studio.advanced',fromlist=['identifier']).identifier
+    identifier(job_id)
+    job=get_job(job_id)
+    if job.get('status')!='completed':raise HTTPException(409,'请先完成曲包生成')
+    from .spectrum import SpectrumService
+    if job_id not in _job_spectra:_job_spectra[job_id]=SpectrumService(ROOT/'outputs'/job_id)
+    return _job_spectra[job_id]
+
+@app.post('/api/jobs/{job_id}/analysis')
+def analyze_job(job_id:str,payload:dict=Body(default={})):
+    try:return job_spectrum(job_id).request('delivery',ROOT/'outputs'/job_id/'0'/'audio.ogg',payload.get('start_ms',0),payload.get('end_ms',5000))
+    except (ValueError,OSError) as exc:raise HTTPException(400,str(exc))
+
+@app.get('/api/jobs/{job_id}/analysis/{analysis_id}')
+def job_analysis_manifest(job_id:str,analysis_id:str,start_ms:float|None=None,end_ms:float|None=None):
+    try:return job_spectrum(job_id).manifest(analysis_id,start_ms,end_ms)
+    except (ValueError,OSError) as exc:raise HTTPException(400,str(exc))
+
+@app.get('/api/jobs/{job_id}/analysis/{analysis_id}/tiles/{level}/{index}')
+def job_analysis_tile(job_id:str,analysis_id:str,level:int,index:int):
+    try:
+        path=job_spectrum(job_id).tile(analysis_id,level,index)
+        return FileResponse(path,media_type='application/octet-stream') if path else Response(status_code=202,headers={'Retry-After':'1'})
+    except (ValueError,OSError) as exc:raise HTTPException(400,str(exc))
 
 def _single_chart_mcz(job_id, row, chart=None):
     directory=ROOT/'outputs'/job_id
@@ -1170,7 +1594,6 @@ def _single_chart_mcz(job_id, row, chart=None):
         filename=f'{row.get("chart_id") or row["key"]}.mc'
     content=BytesIO()
     with zipfile.ZipFile(content,'w',zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('0/',b'')
         archive.writestr(f'0/{filename}',json.dumps(chart,ensure_ascii=False,indent=2).encode('utf-8'))
         archive.write(audio,'0/audio.ogg')
         background=directory/'0'/'background.jpg'
@@ -1185,11 +1608,33 @@ def download_chart_pack(job_id: str, chart_id: str):
     row=_chart_row(job,chart_id)
     if row is None: raise HTTPException(404,'谱面组合不存在')
     data,filename=_single_chart_mcz(job_id,row)
-    from .naming import chart_stem
-    name=chart_stem(job['title'],job.get('options',{}).get('engine','mug'),
-                    row.get('pattern','balanced'),row.get('difficulty',row['key']))+'.mcz'
-    return Response(content=data,media_type='application/octet-stream',
-        headers={'Content-Disposition':"attachment; filename*=UTF-8''"+quote(name)})
+    return published_single_chart(job,row,data,chart_id)
+
+
+def published_single_chart(job,row,data,export_id,version=None):
+    from .library import publish,is_deleted
+    job_id=job['id']
+    if is_deleted(ROOT,job_id+':'+export_id):raise HTTPException(410,'曲包已删除，请明确重新导出')
+    directory=ROOT/'outputs'/job_id/'single-exports';directory.mkdir(exist_ok=True)
+    source=directory/((row.get('chart_id') or row['key'])+('-v'+str(version) if version else ''))
+    source=source.with_suffix('.mcz');source.write_bytes(data)
+    # A version download must retain its own stored signature, even when the
+    # current selected chart uses a different creator.
+    with zipfile.ZipFile(BytesIO(data)) as archive:
+        stored_chart=json.loads(archive.read(next(n for n in archive.namelist() if n.endswith('.mc'))))
+    exported_row={**row}
+    exported_row.pop('creator',None)
+    report={**job['report'],'charts':[exported_row],'difficulties':[exported_row]}
+    report.pop('creator',None)
+    stored_creator=stored_chart.get('meta',{}).get('creator')
+    try:
+        exported_creator=validate_creator(stored_creator)
+    except ValueError:
+        pass  # Historical packages may have no signature; preserve their MC.
+    else:
+        report['creator']=exported_row['creator']=exported_creator
+    _,manifest,target=publish(ROOT,job_id+':'+export_id,source,report,job.get('created'),{'type':'song','job_id':job_id,'chart_id':row.get('chart_id') or row['key'],'version':version})
+    return FileResponse(target,media_type='application/octet-stream',filename=manifest['archive'])
 
 @app.get('/api/jobs/{job_id}/charts/{chart_id}')
 def chart_for_arcade(job_id: str, chart_id: str):
@@ -1275,13 +1720,19 @@ app.mount('/static', StaticFiles(directory=ROOT / 'web'), name='static')
 
 from .advanced_api import router as advanced_router
 app.include_router(advanced_router)
+from .music_assets_api import router as music_assets_router
+app.include_router(music_assets_router)
 
 @app.get('/api/music/search')
-def music_search(q: str, cursor: int = Query(0, ge=0, le=500), limit: int = Query(20, ge=1, le=20),
-                 min_duration: int = Query(5, ge=5, le=600), max_duration: int = Query(600, ge=5, le=600)):
+def music_search(q: str, cursor: int = Query(0, ge=0, le=10000), limit: int = Query(24, ge=1, le=24),
+                 min_duration: int = Query(5, ge=5, le=600), max_duration: int = Query(600, ge=5, le=600),
+                 exclude: str = Query('',max_length=20000)):
     from .music import search_page
     try:
-        return search_page(q, cursor, limit, min_duration, max_duration)
+        excluded=exclude.split(',') if exclude else []
+        from .music import valid_id
+        for video_id in excluded:valid_id(video_id)
+        return search_page(q, cursor, limit, min_duration, max_duration,excluded)
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc))
 
@@ -1309,6 +1760,9 @@ def create_batch(payload: dict = Body(...)):
         rules = snapshot.get('difficulty_rules', {})
         if isinstance(rules, str):
             rules = json.loads(rules)
+        ranges = snapshot.get('nps_ranges', {})
+        if isinstance(ranges, dict):
+            ranges = json.dumps(ranges)
         def number(key, default, convert=float):
             value = snapshot.get(key, default)
             return None if key == 'bpm' and value in (None, '') else convert(value)
@@ -1316,7 +1770,9 @@ def create_batch(payload: dict = Body(...)):
             number('ln_ratio', .15), number('steps', 50, int), number('seed', 20261001, int),
             number('bpm', None), str(snapshot.get('engine', 'mug')),
             difficulty_rules=json.dumps(rules), pattern=str(snapshot.get('pattern', 'balanced')),
-            patterns=snapshot.get('patterns'), dynamic_enabled=snapshot.get('dynamic_enabled',True),
+            nps_ranges=ranges, parallel_streams=snapshot.get('parallel_streams', 0),
+            creator=snapshot.get('creator', DEFAULT_CHART_CREATOR),
+            patterns=snapshot.get('patterns'), dynamic_enabled=snapshot.get('dynamic_enabled',True), tail_trim_enabled=snapshot.get('tail_trim_enabled',True),
             pattern_strength=number('pattern_strength', 20, int),
             mug_difficulty=number('mug_difficulty', 8), mug_style=str(snapshot.get('mug_style', 'ranked')),
             mug_guidance=number('mug_guidance', 1.5), mug_eta=number('mug_eta', 0),
@@ -1399,7 +1855,8 @@ def music_generate(video_id: str, title: str = Form(...), artist: str = Form('')
                    v32_top_p: float = Form(.9), v32_column_temperature: float = Form(.8),
                    v32_cfg_scale: float = Form(1), v32_year: int = Form(2024),
                    v32_descriptors: str = Form(''), v32_negative_descriptors: str = Form(''),
-                   patterns: str = Form(''), dynamic_enabled: bool = Form(True)):
+                   patterns: str = Form(''), dynamic_enabled: bool = Form(True), tail_trim_enabled: bool = Form(True),
+                   nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form)):
     from .music import ready_audio
     options = settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine,
                        difficulty_rules=difficulty_rules, pattern=pattern, pattern_strength=pattern_strength,
@@ -1407,7 +1864,8 @@ def music_generate(video_id: str, title: str = Form(...), artist: str = Form('')
                        v32_difficulty=v32_difficulty, v32_temperature=v32_temperature, v32_top_p=v32_top_p,
                        v32_column_temperature=v32_column_temperature, v32_cfg_scale=v32_cfg_scale,
                        v32_year=v32_year, v32_descriptors=v32_descriptors,
-                       v32_negative_descriptors=v32_negative_descriptors, patterns=patterns, dynamic_enabled=dynamic_enabled)
+                       v32_negative_descriptors=v32_negative_descriptors, patterns=patterns, dynamic_enabled=dynamic_enabled, tail_trim_enabled=tail_trim_enabled,
+                       nps_ranges=nps_ranges, parallel_streams=parallel_streams, creator=creator)
     ensure_engine(options)
     try:
         source, track = ready_audio(video_id)

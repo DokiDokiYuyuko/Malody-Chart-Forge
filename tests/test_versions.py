@@ -20,7 +20,7 @@ def test_single_tier_regeneration_versions_and_restores_without_changing_other_d
             {'key':'medium','label':'Medium',**medium_stats,'difficulty_adjustment':{'target_active_nps':5},'validation':{'valid':True}}]}
     package(directory,charts,audio,report)
     cache={'format':1,'duration_ms':20000,'bpm':120,'engine':'mug','model_version':'MuG Diffusion v1.0.0',
-        'candidates':[[float(i*400),1.0,[]] for i in range(1,48)],'timings':{},'raw_counts':{'easy':48},'options':{}}
+        'candidates':[[float(i*400),1.0,[[float(i*400),i%4,None]]] for i in range(1,48)],'timings':{},'raw_counts':{'easy':47},'options':{}}
     (directory/'generation-cache.json').write_text(json.dumps(cache),encoding='utf-8')
     job={'id':job_id,'title':'Song','artist':'Artist','status':'completed','created':'now','queue_order':1,
         'options':{'title':'Song','artist':'Artist','engine':'mug','difficulties':['easy','medium'],'seed':7,

@@ -9,10 +9,17 @@ from malody_studio import advanced, advanced_api
 
 @pytest.fixture
 def context(tmp_path, monkeypatch):
-    source=tmp_path/'music.wav'; sf.write(source,np.zeros((advanced.SR*4,2),np.float32),advanced.SR,subtype='FLOAT')
+    source=tmp_path/'music.wav'; sf.write(source,np.full((advanced.SR*4,2),.1,np.float32),advanced.SR,subtype='FLOAT')
     monkeypatch.setattr(advanced,'audio_metadata',lambda _: ([],{'bpm':120,'points':[[0,120]],'uncertain':True}))
     store=advanced.ProjectStore(tmp_path/'projects');p=store.create(source,'Timeline')
     monkeypatch.setattr(advanced_api,'store',store)
+    # Manual legacy preflight is independent of detector installation and direct-policy tests.
+    from malody_studio import nps_star_calibration, advanced_plans
+    monkeypatch.setattr(nps_star_calibration, 'freeze_policy', lambda: None)
+    from malody_studio import section_plan
+    monkeypatch.setattr(advanced_plans, 'get_or_build_plan',
+        lambda current_store, current_project, settings: section_plan.build_plan(
+            current_store.directory(current_project['id'])/'source.wav',settings,current_project.get('tempo',{})))
     plan={'id':'a'*64,'samples':p['samples'],'source_pcm_sha':p['source_pcm_sha256'],
           'sections':[{'core':[0,advanced.SR]},{'core':[advanced.SR,2*advanced.SR]},{'core':[2*advanced.SR,p['samples']]}]}
     advanced.atomic(store.directory(p['id'])/'section-plans'/(plan['id']+'.json'),plan)
@@ -70,6 +77,31 @@ def test_invalid_draft_and_running_task_do_not_mutate(context,monkeypatch):
     assert result.status_code==409 and store.load(p['id'])==p
 
 
+def test_automatic_nearby_cuts_yield_to_existing_boundaries(context):
+    store,p,plan,c,url=context
+    boundary=round(.9*advanced.SR)
+    store.add_segment(p['id'],{'start_sample':0,'end_sample':boundary})
+    before=store.add_segment(p['id'],{'start_sample':boundary,'end_sample':p['samples']})
+    draft=preview(context)
+    assert draft['cuts']==[2*advanced.SR]
+    assert [(r['start_sample'],r['end_sample']) for r in draft['segments']]==[(0,boundary),(boundary,2*advanced.SR),(2*advanced.SR,p['samples'])]
+    assert store.load(p['id'])==before
+    # An explicitly requested edit remains subject to the minimum duration.
+    assert c.post(url+'/segmentation-preview',json={'plan_id':plan['id'],'cuts':[advanced.SR]}).status_code==400
+
+
+def test_region_policy_minimum_applies_only_to_new_suggestions_not_existing_layout(context):
+    store,p,plan,c,url=context
+    p=store.add_segment(p['id'],{'start_sample':0,'end_sample':int(1.5*advanced.SR)})
+    before=store.add_segment(p['id'],{'start_sample':int(1.5*advanced.SR),'end_sample':p['samples']})
+    advanced.atomic(store.directory(p['id'])/'section-plans'/(plan['id']+'.json'),
+                    {**plan,'region_policy':{'minimum_seconds':2}})
+    draft=preview(context)
+    assert draft['cuts']==[]  # avoid a new 500 ms fragment beside the manual boundary
+    assert [(r['start_sample'],r['end_sample']) for r in draft['segments']]==[(s['start_sample'],s['end_sample']) for s in before['segments']]
+    assert store.load(p['id'])==before
+
+
 def test_batch_preflight_frozen_manual_selection_and_duplicate_request(context,monkeypatch):
     from malody_studio import server
     store,p,plan,c,url=context
@@ -79,7 +111,8 @@ def test_batch_preflight_frozen_manual_selection_and_duplicate_request(context,m
     monkeypatch.setattr(server,'ensure_engine',lambda _:None)
     monkeypatch.setattr(server,'enqueue_jobs',lambda entries:captured.extend(copy.deepcopy(entries)) or [{'id':advanced.uid()} for _ in entries])
     settings={**p['settings'],'dynamic_enabled':False,'fixed_seed':True}
-    payload={'request_id':advanced.uid(),'segment_ids':[s['id'] for s in reversed(p['segments'])], 'settings':settings,'expected_revision':p['revision']}
+    payload={'request_id':advanced.uid(),'segment_ids':[s['id'] for s in reversed(p['segments'])], 'settings':settings,'expected_revision':p['revision'],
+             'generation_context_policy':{'version':'legacy-section-pass'}}
     bad=c.post(url+'/generation-batches',json={**payload,'segment_ids':[p['segments'][0]['id'],'f'*32]})
     assert bad.status_code==400 and not captured
     result=c.post(url+'/generation-batches',json=payload)
@@ -87,6 +120,8 @@ def test_batch_preflight_frozen_manual_selection_and_duplicate_request(context,m
     assert len(captured)==2 and all(entry[0]['_advanced']['activate_initial'] is False for entry in captured)
     assert captured[0][0]['_advanced']['segment']['start_sample']==0
     assert c.post(url+'/generation-batches',json=payload).json()==result.json() and len(captured)==2
+    changed=c.post(url+'/generation-batches',json={**payload,'source_id':'accompaniment'})
+    assert changed.status_code==400 and len(captured)==2
     snapshot=captured[0][0]['_advanced'];store.update(p['id'],{'settings':{**settings,'seed':99}})
     assert snapshot['settings']['seed']!=99
     advanced_api.commit_generated({'_advanced':snapshot},{'bounds':[0,advanced.SR],'advanced_result':[

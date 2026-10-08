@@ -13,6 +13,10 @@ import torch
 from demucs.apply import apply_model
 from demucs.pretrained import get_model
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 
 def sha(path):
     h = hashlib.sha256()
@@ -22,23 +26,27 @@ def sha(path):
     return h.hexdigest()
 
 
-def main(request_path):
+def _main_impl(request_path):
+    from malody_studio.workflow_log import stage, event
     started = time.monotonic()
     request = json.loads(Path(request_path).read_text(encoding='utf-8'))
     directory = Path(request['directory'])
-    data, rate = sf.read(request['source'], dtype='float32', always_2d=True)
-    settings = request['settings']
-    if rate != 44100 or data.shape != (request['frame_count'], 2) or not np.isfinite(data).all():
-        raise ValueError('分离工作进程源 PCM 不匹配')
-    if hashlib.sha256(np.asarray(data, dtype='<f4').tobytes()).hexdigest() != request['source_pcm_sha']:
-        raise ValueError('分离工作进程源 PCM 哈希不匹配')
+    with stage('demucs.read_and_verify_source_pcm',source=request['source'],expected_frames=request['frame_count'],
+               expected_sha256=request['source_pcm_sha']):
+        data, rate = sf.read(request['source'], dtype='float32', always_2d=True)
+        settings = request['settings']
+        if rate != 44100 or data.shape != (request['frame_count'], 2) or not np.isfinite(data).all():
+            raise ValueError('分离工作进程源 PCM 不匹配')
+        if hashlib.sha256(np.asarray(data, dtype='<f4').tobytes()).hexdigest() != request['source_pcm_sha']:
+            raise ValueError('分离工作进程源 PCM 哈希不匹配')
     if not torch.cuda.is_available():
         raise RuntimeError('CUDA 不可用；Demucs 已停止，请检查独立环境和显卡驱动后重试。')
     random.seed(settings['seed']); np.random.seed(settings['seed']); torch.manual_seed(settings['seed'])
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     torch.set_num_threads(4)
-    model = get_model(settings['model'], repo=Path(request['model_root']))
+    with stage('demucs.load_model',model=settings['model'],model_root=request['model_root'],device='cuda'):
+        model = get_model(settings['model'], repo=Path(request['model_root']))
     if model.samplerate != rate or model.audio_channels != 2:
         raise ValueError('分离模型采样时钟不匹配')
     model.eval()
@@ -48,10 +56,12 @@ def main(request_path):
     # One mixture normalization; reverse identically for every model output.
     normalized = (mix - mean) / (std + 1e-8)
     if torch.cuda.is_available(): torch.cuda.reset_peak_memory_stats()
-    with torch.inference_mode():
-        estimate = apply_model(model, normalized[None], device='cuda',
-                               shifts=settings['shifts'], split=True, overlap=settings['overlap'],
-                               segment=settings['segment'], progress=True, num_workers=0)[0].cpu()
+    with stage('demucs.separate_full_song',model=settings['model'],device='cuda',sample_rate=rate,
+               frames=len(data),shifts=settings['shifts'],split=True,overlap=settings['overlap'],segment=settings['segment']):
+        with torch.inference_mode():
+            estimate = apply_model(model, normalized[None], device='cuda',
+                                   shifts=settings['shifts'], split=True, overlap=settings['overlap'],
+                                   segment=settings['segment'], progress=True, num_workers=0)[0].cpu()
     estimate = estimate * (std + 1e-8) + mean
     if estimate.shape[-1] != len(data):
         raise ValueError('分离输出帧数与原曲不相等；禁止自动拉伸')
@@ -87,6 +97,20 @@ def main(request_path):
     temporary.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
     temporary.replace(directory / 'manifest.json')
     print(json.dumps({'complete': True, 'frames': len(data), 'device': manifest['device']}))
+    event('separation_result','demucs.write_manifest',manifest_id=manifest.get('id'),performance=manifest.get('performance'),
+          device=manifest.get('device'),alignment=manifest.get('alignment'),stems=manifest.get('stems'))
+
+
+def main(request_path):
+    from malody_studio.workflow_log import attach_external, current_context, stage
+    path=Path(request_path);request=json.loads(path.read_text(encoding='utf-8'));context=request.get('workflow_trace')
+    attached=current_context()
+    if attached and context and attached.get('path')==context.get('path') and attached.get('run_id')==context.get('run_id'):
+        with stage('demucs.worker_request',request_path=path,settings=request.get('settings')):
+            return _main_impl(path)
+    with attach_external(context,'demucs_cuda_worker'):
+        with stage('demucs.worker_request',request_path=path,settings=request.get('settings')):
+            return _main_impl(path)
 
 
 if __name__ == '__main__':

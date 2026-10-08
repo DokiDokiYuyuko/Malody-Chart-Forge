@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 TARGET = ROOT / "models" / "separation" / "melband-roformer-kim"
 VENDOR = ROOT / "vendor" / "RoFormer"
 RUNTIME = ROOT / "runtime" / "roformer-venv"
@@ -213,7 +215,7 @@ print(json.dumps({"python": sys.version, "python_version": platform.python_versi
 
 
 def code_records() -> tuple[dict, str]:
-    paths = [ROOT / "tools" / "setup_roformer.py"]
+    paths = [ROOT / "tools" / "setup_roformer.py", ROOT / "malody_studio" / "deployment_integrity.py"]
     paths += [path for path in VENDOR.rglob("*") if path.is_file() and "__pycache__" not in path.parts]
     # Include integration code if present so every deployed adapter file has a hash.
     paths += [path for path in (ROOT / "tools" / "roformer_worker.py", ROOT / "malody_studio" / "roformer.py",
@@ -229,6 +231,7 @@ def write_manifest(environment: dict, download_url: str) -> dict:
     for name, url, expected in ((WEIGHT_NAME, official_url, WEIGHT_SHA256), (CONFIG_NAME, RAW_SOURCE + CONFIG_PATH, UPSTREAM_SHA256[CONFIG_PATH]), ("LICENSE", RAW_SOURCE + "LICENSE", UPSTREAM_SHA256["LICENSE"])):
         path = TARGET / name
         files[name] = {"bytes": path.stat().st_size, "sha256": require_hash(path, expected), "url": url}
+    from malody_studio.deployment_integrity import registry_inference_hash
     code_files, code_hash = code_records()
     manifest = {
         "schema": 1, "adapter_version": VERSION, "code_version": COMMIT,
@@ -238,6 +241,7 @@ def write_manifest(environment: dict, download_url: str) -> dict:
         "models": {"melband_roformer_kim": [WEIGHT_NAME, CONFIG_NAME]}, "files": files,
         "environment": environment, "dependency_lock_sha256": sha(LOCK),
         "code_files": code_files, "code_hash": code_hash, "inference_verified": False,
+        "registry_inference_sha256": registry_inference_hash(ROOT / "malody_studio" / "separation_models.py"),
     }
     destination = TARGET / "manifest.json"
     temporary = TARGET / "manifest.partial.json"

@@ -16,6 +16,7 @@
   let saved;try{saved=JSON.parse(localStorage.getItem(storageKey)||'null');}catch{}
   let prefs=normalize(saved),context=null,output=null;
   const buffers=new Map(),pending=new Map();
+  let preparing=null;
   function ensureContext(){
     if(!context){
       const Audio=window.AudioContext||window.webkitAudioContext;
@@ -40,18 +41,30 @@
   }
   async function prepare(){
     if(!prefs.enabled||!prefs.volume)return;
-    try{const ctx=ensureContext();await ctx.resume();await bufferFor(prefs.style);$('keysound-status').textContent='';}
+    if(preparing){try{await preparing;}catch{}return;}
+    preparing=(async()=>{const ctx=ensureContext();await ctx.resume();await bufferFor(prefs.style);$('keysound-status').textContent='';})();
+    try{await preparing;}
     catch(error){$('keysound-status').textContent=error.message;}
+    finally{preparing=null;}
   }
   function play(){
-    if(!prefs.enabled||!prefs.volume||!context||context.state!=='running')return false;
+    if(!prefs.enabled||!prefs.volume)return false;
+    if(!context||context.state!=='running'||!buffers.has(prefs.style)){
+      // A key press is itself a user gesture. Initialize Web Audio here so
+      // first-use DFJK skin trials do not stay silent until Preview is clicked.
+      void prepare().then(()=>{if(context?.state==='running'&&buffers.has(prefs.style))play();});
+      return false;
+    }
     const buffer=buffers.get(prefs.style);if(!buffer)return false;
     const source=context.createBufferSource(),gain=context.createGain();source.buffer=buffer;
     // A fresh source for each key permits chords without restarting the previous sound.
     // Short envelopes keep dense charts clear and avoid clicks at the clipped tail.
     const now=context.currentTime,duration=Math.min(buffer.duration,.15);
-    gain.gain.setValueAtTime(prefs.volume/100*.55,now);
-    gain.gain.setValueAtTime(prefs.volume/100*.55,now+Math.max(0,duration-.012));
+    // The clips are ~10 ms transients that land exactly on the music's own accents;
+    // below this level they are masked by full-scale music. The compressor bounds chords.
+    const level=Math.min(1,prefs.volume/100*1.4);
+    gain.gain.setValueAtTime(level,now);
+    gain.gain.setValueAtTime(level,now+Math.max(0,duration-.012));
     gain.gain.linearRampToValueAtTime(0,now+duration);
     source.connect(gain);gain.connect(output);source.start(now);source.stop(now+duration);
     source.onended=()=>{source.disconnect();gain.disconnect();};return true;

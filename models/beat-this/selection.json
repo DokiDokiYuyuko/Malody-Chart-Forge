@@ -1,0 +1,10 @@
+{
+  "schema": "beat-detector-selection-v1",
+  "adapter": "beat_this_final1",
+  "detector_approved": true,
+  "strong_reference_approved": false,
+  "independent_v32_review": false,
+  "limitations": [
+    "Automatic beat detection is a hypothesis; no automatic strong V32 timing reference."
+  ]
+}

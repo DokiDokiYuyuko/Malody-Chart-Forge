@@ -70,6 +70,47 @@ def test_historical_twenty_one_candidates_resolve_by_jobs_without_rewriting(hist
     assert client.get('/api/history').json()['total'] == 0
 
 
+def test_continuous_batch_reads_each_immutable_revision_once(history_context, monkeypatch):
+    store,pid,bid,jobs,_=history_context
+    project=store.load(pid)
+    continuous=copy.deepcopy(next(iter(jobs.values())))
+    continuous['options']['_advanced']['member_segments']=copy.deepcopy(project['segments'])
+    continuous['advanced_revisions']=[rid for job in jobs.values() for rid in job['advanced_revisions']]
+    before=copy.deepcopy(continuous)
+    calls=[];read_revision=store.revision
+    def tracked(project_id,revision_id):
+        calls.append(revision_id)
+        return read_revision(project_id,revision_id)
+    monkeypatch.setattr(store,'revision',tracked)
+    results=task_history.candidate_results(store,project,[continuous])
+    assert len(results)==21 and sum(row['primary'] for row in results)==7
+    assert {row['segment_id'] for row in results}=={part['id'] for part in project['segments']}
+    assert all(row['job_id']==continuous['id'] and row['adoptable'] for row in results)
+    assert len(calls)==len(set(continuous['advanced_revisions']))
+    assert continuous==before
+
+
+def test_history_snapshot_skips_frozen_generation_payload_and_region_views_are_light():
+    class FrozenPayload:
+        def __deepcopy__(self, memo):
+            raise AssertionError('history list must not copy model input payloads')
+
+    job={'id':'1'*32,'title':'large source','artist':'artist','status':'completed',
+         'created':'2026-10-06T00:00:00Z','options':{'_advanced':{
+             'project':{'id':'2'*32,'title':'large source','artist':'artist','frozen_pcm':FrozenPayload()},
+             'segment':{'id':'3'*32,'name':'section','start_sample':0,'end_sample':44100,
+                        'audio_payload':FrozenPayload()},
+             'member_segments':[{'id':'3'*32,'name':'section','start_sample':0,'end_sample':44100,
+                                 'audio_payload':FrozenPayload()}],
+             'variants':[{'key':'balanced--expert','request_payload':FrozenPayload()}],
+             'settings':{'source_mode':'original','model_config':FrozenPayload()}}}}
+    snapshot=task_history.history_snapshot([job])[0]
+    assert snapshot['options']['_advanced']['project']=={'id':'2'*32,'title':'large source','artist':'artist'}
+    view=task_history._region_jobs([snapshot])[0]
+    assert view['options']['_advanced']['segment']['id']=='3'*32
+    assert view['options']['_advanced']['segment'] is not snapshot['options']['_advanced']['member_segments'][0]
+
+
 def test_missing_fusion_is_partial_even_when_task_is_completed(history_context):
     _, pid, bid, jobs, client = history_context
     first = next(iter(jobs.values()))
@@ -186,3 +227,21 @@ def test_open_folder_only_resolves_owned_output_ids(history_context, monkeypatch
     monkeypatch.setattr(store, 'directory', lambda _: tmp_path.parent)
     assert client.post('/api/task-history/open-folder', json={'record_id': record_id}).status_code == 400
     assert len(opened) == 2
+
+
+def test_non_fatal_warnings_are_listed_apart_and_do_not_make_a_job_partial(history_context):
+    store, pid, bid, jobs, client = history_context
+    first = next(iter(jobs.values()))
+    first['advanced_warnings'] = [{'kind': 'empty_silent_stem', 'non_fatal': True, 'stage': 'vocals',
+                                   'variant': 'balanced--expert', 'error': '声部在该请求核心区 100% 为静音'}]
+    first['advanced_errors'] = [{'variant': 'balanced--expert', 'error': 'real failure'},
+                                {'kind': 'empty_silent_stem', 'non_fatal': True, 'error': 'legacy-shaped warning'}]
+    detail = client.get(f'/api/advanced/projects/{pid}/generation-batches/{bid}').json()
+    row = next(job for job in detail['jobs'] if job['id'] == first['id'])
+    assert row['status'] == 'partial' and row['error_count'] == 1 and row['error'] == 'real failure'
+    assert [w['kind'] for w in row['warnings']] == ['empty_silent_stem', 'empty_silent_stem'] and row['warning_count'] == 2
+    first['advanced_errors'] = []
+    detail = client.get(f'/api/advanced/projects/{pid}/generation-batches/{bid}').json()
+    row = next(job for job in detail['jobs'] if job['id'] == first['id'])
+    assert row['status'] == 'completed' and row['error_count'] == 0 and row['error'] == ''
+    assert row['warning_count'] == 1 and row['warnings'][0]['stage'] == 'vocals'

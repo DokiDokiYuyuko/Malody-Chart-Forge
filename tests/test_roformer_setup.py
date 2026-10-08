@@ -83,3 +83,15 @@ def test_code_record_paths_are_project_relative_and_exclude_bytecode():
     assert "tools/setup_roformer.py" in records
     assert all("__pycache__" not in name for name in records)
     assert code_hash == digest(__import__("json").dumps(records, sort_keys=True, separators=(",", ":")).encode())
+
+
+def test_registry_display_changes_do_not_invalidate_inference_but_validation_changes_do(tmp_path):
+    from malody_studio.deployment_integrity import registry_inference_hash
+    source = (setup.ROOT / 'malody_studio' / 'separation_models.py').read_text(encoding='utf-8')
+    path = tmp_path / 'registry.py'
+    path.write_text(source, encoding='utf-8')
+    expected = registry_inference_hash(path)
+    path.write_text(source.replace("label='Kim MelBand RoFormer'", "label='New display label'"), encoding='utf-8')
+    assert registry_inference_hash(path) == expected
+    path.write_text(source.replace("'overlap_count': 4", "'overlap_count': 2"), encoding='utf-8')
+    assert registry_inference_hash(path) != expected

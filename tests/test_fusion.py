@@ -22,6 +22,44 @@ def plan(target=20, chord=2, gap=120, peak=8):
          'hard_caps': {'chord': chord, 'peak_1s': peak, 'min_lane_gap_ms': gap, 'hold_max_ms': 900}}}}]}
 
 
+def test_default_model_only_does_not_spend_unused_budget_on_onsets():
+    v=revision('vocals',[note(100,0,tail=500,identity='ln'),note(100,1,identity='tap')])
+    a=revision('accompaniment',[note(700,2,identity='stagger')])
+    for row in v['events']:row['model_group_id']='model-accent'
+    frozen={'id':'onsets','source':{'sample_rate':44100},
+            'onset_samples':[round(t*44.1) for t in range(100,3900,100)],
+            'onset_strengths':[3.]*38}
+    before=copy.deepcopy((v,a))
+    result=fuse_revisions(v,a,plan(target=50),acoustic=frozen)
+    assert (v,a)==before
+    assert len(result['events'])==3
+    assert {e['start_ms'] for e in result['events']}=={100.,700.}
+    assert all(e['candidate_provenance']['kind']=='model' for e in result['events'])
+    accent=[e for e in result['events'] if e['start_ms']==100.]
+    assert all(e['model_group_id']=='model-accent' for e in accent)
+    assert sum(e['end_ms']==500. for e in accent)==1
+    stages=result['provenance']['head_stage_counts']
+    assert stages['raw_model_heads']==stages['deduplicated_model_heads']==stages['selected_model_heads']==3
+    assert stages['acoustic_new_heads']==stages['selected_acoustic_heads']==0
+
+
+def test_default_model_only_empty_supply_cannot_create_heads():
+    frozen={'id':'onsets','source':{'sample_rate':44100},'onset_samples':[4410], 'onset_strengths':[4.]}
+    result=fuse_revisions(revision('vocals',[]),revision('accompaniment',[]),plan(),acoustic=frozen)
+    assert result['events']==[]
+    assert result['stats'][0]['candidate_acoustic_heads']==0
+
+
+def test_model_head_stage_counts_reconcile_audibility_duplicates_and_selection():
+    v=revision('vocals',[note(100,identity='copy',shared='sound'),note(900,identity='quiet')])
+    v['events'][1]['audio_evidence']={'audible':False}
+    a=revision('accompaniment',[note(100,identity='other-copy',shared='sound')])
+    stages=fuse_revisions(v,a,plan())['provenance']['head_stage_counts']
+    assert stages['raw_model_heads']==3
+    assert stages['unsupported_model_heads']==stages['cross_source_duplicate_heads']==1
+    assert stages['deduplicated_model_heads']==stages['selected_model_heads']==1
+
+
 def test_close_different_voices_survive_and_share_all_lanes():
     v = revision('vocals', [note(100), note(130, identity='v2')])
     a = revision('accompaniment', [note(100, identity='a1'), note(150, identity='a2')])
