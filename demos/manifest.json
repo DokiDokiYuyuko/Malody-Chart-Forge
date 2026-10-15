@@ -6,13 +6,16 @@
   "creator": "Startrail",
   "evidence": "Source packages match installed game files byte-for-byte; not a human-playtest claim.",
   "preview": {
-    "file": "preview.mp4",
-    "kind": "chart-data render; not an in-game recording",
-    "fps": 60,
-    "scroll_multiplier": 10,
+    "kind": "six individual chart-data renders; not in-game recordings",
     "width": 1280,
     "height": 720,
-    "duration_seconds": 48
+    "fps": 60,
+    "scroll_multiplier": 3,
+    "duration_per_song_seconds": 30,
+    "video_count": 6,
+    "keysound": "Malody V embedded hit-4; Master heads only",
+    "legacy_overview_file": "preview.mp4",
+    "legacy_overview_duration_seconds": 48
   },
   "songs": [
     {
@@ -56,13 +59,17 @@
       "installed_files_match": true,
       "gameplay_recording": false,
       "human_playtest": "not_established",
-      "preview_source_start_seconds": 133,
-      "preview_duration_seconds": 8
+      "preview_source_start_seconds": 59,
+      "preview_duration_seconds": 30,
+      "preview_file": "videos/toy-vwp.mp4",
+      "preview_poster": "videos/toy-vwp.jpg",
+      "preview_sha256": "23f42b0f653a04c135596c42590f8bf23b2b63bd698c486fa1c54dad3cd61db2",
+      "display_name": "玩具 — V.W.P"
     },
     {
       "song_id": "2095790650",
       "title": "INTERNET YAMERO (cover)",
-      "display_title": "INTERNET YAMERO",
+      "display_title": "INTERNET YAMERO (cover)",
       "artist": "ヰ世界情緒",
       "file": "internet-yamero-isekaijoucho.mcz",
       "sha256": "e9a60263aa5fdfe4292bf4a81bbd3596e173c2c12899dd40e46f5084245c74db",
@@ -100,13 +107,17 @@
       "installed_files_match": true,
       "gameplay_recording": false,
       "human_playtest": "not_established",
-      "preview_source_start_seconds": 169,
-      "preview_duration_seconds": 8
+      "preview_source_start_seconds": 83,
+      "preview_duration_seconds": 30,
+      "preview_file": "videos/internet-yamero-isekaijoucho.mp4",
+      "preview_poster": "videos/internet-yamero-isekaijoucho.jpg",
+      "preview_sha256": "de094006dd9ec2058bacfa21e152936b216230fbc8551e952042248332756c22",
+      "display_name": "INTERNET YAMERO (cover) — ヰ世界情緒"
     },
     {
       "song_id": "2060100176",
       "title": "アンノウン・マザーグース - covered by ヰ世界情緒",
-      "display_title": "鹅妈妈 / Unknown Mother-Goose",
+      "display_title": "アンノウン・マザーグース - covered by ヰ世界情緒",
       "artist": "ヰ世界情緒",
       "file": "unknown-mother-goose-isekaijoucho.mcz",
       "sha256": "81bc301619c8efcf04fbcacd2f3729b4ecad5636293820cd8036dae991d33167",
@@ -144,13 +155,17 @@
       "installed_files_match": true,
       "gameplay_recording": false,
       "human_playtest": "not_established",
-      "preview_source_start_seconds": 176,
-      "preview_duration_seconds": 8
+      "preview_source_start_seconds": 136,
+      "preview_duration_seconds": 30,
+      "preview_file": "videos/unknown-mother-goose-isekaijoucho.mp4",
+      "preview_poster": "videos/unknown-mother-goose-isekaijoucho.jpg",
+      "preview_sha256": "50c935f0122e0bdf2f862b335eae537a6c905c3b765c717d7e467f74de08ad17",
+      "display_name": "アンノウン・マザーグース - covered by ヰ世界情緒 — ヰ世界情緒"
     },
     {
       "song_id": "22677436",
       "title": "裏表ラバーズ",
-      "display_title": "里表情人 / 裏表ラバーズ",
+      "display_title": "裏表ラバーズ",
       "artist": "wowaka / 初音ミク",
       "file": "ura-omote-lovers.mcz",
       "sha256": "b3de3d6cf549a7391eed8f7308c6e1ae8ff161aad991c3af58a89142b60e3ada",
@@ -188,8 +203,12 @@
       "installed_files_match": true,
       "gameplay_recording": false,
       "human_playtest": "not_established",
-      "preview_source_start_seconds": 86,
-      "preview_duration_seconds": 8
+      "preview_source_start_seconds": 80,
+      "preview_duration_seconds": 30,
+      "preview_file": "videos/ura-omote-lovers.mp4",
+      "preview_poster": "videos/ura-omote-lovers.jpg",
+      "preview_sha256": "83a341692afe9a984c9c49bb0e1a7e553bab3f95720df15ffbe3c568687cd181",
+      "display_name": "裏表ラバーズ — wowaka / 初音ミク"
     },
     {
       "song_id": "2749390432",
@@ -232,13 +251,17 @@
       "installed_files_match": true,
       "gameplay_recording": false,
       "human_playtest": "not_established",
-      "preview_source_start_seconds": 130,
-      "preview_duration_seconds": 8
+      "preview_source_start_seconds": 124,
+      "preview_duration_seconds": 30,
+      "preview_file": "videos/witch-shin-vwp.mp4",
+      "preview_poster": "videos/witch-shin-vwp.jpg",
+      "preview_sha256": "07d1c78afaa8b88c89af5a285deeb51f89a95d939b7cae466ea647481de86a2a",
+      "display_name": "魔女(真) sinka ver. — V.W.P"
     },
     {
       "song_id": "1963634342",
       "title": "Night of Bloom (feat. nayuta)",
-      "display_title": "Night of Bloom",
+      "display_title": "Night of Bloom (feat. nayuta)",
       "artist": "Kirara Magic / Xomu / nayuta",
       "file": "night-of-bloom.mcz",
       "sha256": "1e2bce5bc4ad2ab1581441060af153353779268d2e6ffa87c96f5fc1f1e71ba4",
@@ -276,8 +299,12 @@
       "installed_files_match": true,
       "gameplay_recording": false,
       "human_playtest": "not_established",
-      "preview_source_start_seconds": 107,
-      "preview_duration_seconds": 8
+      "preview_source_start_seconds": 105,
+      "preview_duration_seconds": 30,
+      "preview_file": "videos/night-of-bloom.mp4",
+      "preview_poster": "videos/night-of-bloom.jpg",
+      "preview_sha256": "fa086d44e74681cdaad0078768b9785340494f7466807b9a7e24a5816e0f51a7",
+      "display_name": "Night of Bloom (feat. nayuta) — Kirara Magic / Xomu / nayuta"
     }
   ]
 }
