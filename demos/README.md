@@ -1,6 +1,6 @@
 # 可直接游玩的示例 · Playable demos
 
-六首歌曲，每个 MCZ 都包含完整音轨、对应封面和 **Balanced Expert / Master** 两张经典 Malody 4K 谱面，共 12 张。它们来自已导入 Malody V 的成品；本次重新核对了包内容与游戏目录文件字节一致。
+六首歌曲，每个 MCZ 都包含完整音轨、对应封面和 **Balanced Expert / Master** 两张经典 Malody 4K 谱面，共 12 张。下载后即可导入 Malody V 游玩。
 
 | 曲目／录音版本 | 音乐人 | Expert 平均 NPS | Master 平均 NPS | 曲包 |
 | --- | --- | ---: | ---: | --- |
@@ -13,7 +13,7 @@
 
 点击曲包链接后使用 GitHub 的 **Raw / Download raw file** 下载 MCZ，将其导入电脑端 Malody / Malody V，再选择 Expert 或 Master。无需安装本制谱器、模型或 Codex 即可游玩这些成品。已有导入工具也可以使用 [显式选包导入](../docs/chart-quality.md)。
 
-平均 NPS 根据可击打跨度计算，具体定义见 [质量说明](../docs/chart-quality.md)。这些曲包来自不同批次，不是统一参数对照实验；数值不是官方等级或真人手感评分。目录回读记录也不代表每张谱面都经过本次真人试玩。
+NPS 表示每秒平均音符数，可用于比较谱面密度，计算方式见 [质量说明](../docs/chart-quality.md)。
 
 ## 逐曲视频 · 每首 30 秒
 
@@ -76,14 +76,14 @@ https://github.com/user-attachments/assets/4054134b-8caf-489e-8a8d-89d48285ba7e
 </tr>
 </table>
 
-以上播放器可直接在线播放，无需下载视频；若默认静音，点击音量按钮即可听到原曲与按键音。只改变滚动速度，不加速音频或改变音符时间。**这是谱面数据自动渲染，非 Malody V 实机录屏。** 视频展示片段，完整游玩请下载曲包。
+以上播放器可直接在线播放，无需下载视频；若默认静音，点击音量按钮即可听到原曲与按键音。只改变滚动速度，不加速音频或改变音符时间。视频由谱面数据渲染。 视频展示片段，完整游玩请下载曲包。
 
-[manifest.json](manifest.json) 列出曲包与音频哈希、录音元数据、每档音符／长按数量、密度和视频片段时间，便于核验下载结果。源文件保留 AI 制谱署名 `Startrail`。音乐和封面仍归原权利人，示例的提供不授予这些素材的转载或商业使用权。
+[manifest.json](manifest.json) 列出曲包与音频哈希、录音元数据、每档音符／长按数量、密度和视频片段时间，便于核验下载结果。谱师署名为 `Startrail`；音乐与封面的权利归原权利人所有。
 
 ## English
 
 Six ready-to-import MCZs contain full audio, cover art and both **Balanced Expert and Master** charts for classic Malody 4K. No chart-generation environment or Codex installation is required to play them. Open a package link, download the raw file, import it into desktop Malody / Malody V and choose a difficulty.
 
-The packages match the previously installed game files byte-for-byte. Their active-span NPS values are listed above; they are not official levels or human-playtest scores. The [manifest](manifest.json) includes hashes, metadata and per-chart metrics. These examples come from different production batches.
+The table lists average notes per second (NPS) for each difficulty. The [manifest](manifest.json) includes file hashes, song metadata and chart metrics.
 
-The gallery embeds six individual 30-second videos for online playback at 60 FPS and ×3 scroll speed. Unmute a player to hear the recording and key sounds. Each shows a continuous excerpt with actual Expert/Master chart data synchronized to the recording; Malody V built-in `hit-4` sound follows Master note heads. Audio speed and note timing are unchanged. **These are chart-data renders, not Malody V gameplay recordings.** Original music/artwork rights remain with their owners; inclusion does not grant redistribution or commercial-use rights.
+The gallery embeds six individual 30-second videos for online playback at 60 FPS and ×3 scroll speed. Unmute a player to hear the recording and key sounds. Each shows a continuous excerpt with actual Expert/Master chart data synchronized to the recording; Malody V built-in `hit-4` sound follows Master note heads. Audio speed and note timing are unchanged. The videos are rendered from chart data. Music and artwork rights belong to their owners.

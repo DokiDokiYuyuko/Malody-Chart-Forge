@@ -4,9 +4,8 @@
   "chart_count": 12,
   "format": "classic Malody 4K MCZ, Expert + Master",
   "creator": "Startrail",
-  "evidence": "Source packages match installed game files byte-for-byte; not a human-playtest claim.",
   "preview": {
-    "kind": "six individual chart-data renders; not in-game recordings",
+    "kind": "six individual chart-data renders",
     "width": 1280,
     "height": 720,
     "fps": 60,
@@ -57,9 +56,6 @@
           ]
         }
       },
-      "installed_files_match": true,
-      "gameplay_recording": false,
-      "human_playtest": "not_established",
       "preview_source_start_seconds": 59,
       "preview_duration_seconds": 30,
       "preview_file": "videos/toy-vwp.mp4",
@@ -106,9 +102,6 @@
           ]
         }
       },
-      "installed_files_match": true,
-      "gameplay_recording": false,
-      "human_playtest": "not_established",
       "preview_source_start_seconds": 83,
       "preview_duration_seconds": 30,
       "preview_file": "videos/internet-yamero-isekaijoucho.mp4",
@@ -155,9 +148,6 @@
           ]
         }
       },
-      "installed_files_match": true,
-      "gameplay_recording": false,
-      "human_playtest": "not_established",
       "preview_source_start_seconds": 136,
       "preview_duration_seconds": 30,
       "preview_file": "videos/unknown-mother-goose-isekaijoucho.mp4",
@@ -204,9 +194,6 @@
           ]
         }
       },
-      "installed_files_match": true,
-      "gameplay_recording": false,
-      "human_playtest": "not_established",
       "preview_source_start_seconds": 80,
       "preview_duration_seconds": 30,
       "preview_file": "videos/ura-omote-lovers.mp4",
@@ -253,9 +240,6 @@
           ]
         }
       },
-      "installed_files_match": true,
-      "gameplay_recording": false,
-      "human_playtest": "not_established",
       "preview_source_start_seconds": 124,
       "preview_duration_seconds": 30,
       "preview_file": "videos/witch-shin-vwp.mp4",
@@ -302,9 +286,6 @@
           ]
         }
       },
-      "installed_files_match": true,
-      "gameplay_recording": false,
-      "human_playtest": "not_established",
       "preview_source_start_seconds": 105,
       "preview_duration_seconds": 30,
       "preview_file": "videos/night-of-bloom.mp4",

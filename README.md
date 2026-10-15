@@ -20,20 +20,18 @@
 
 ![统一曲包库](docs/screenshots/readme-v2-library.png)
 
-截图使用当前桌面界面与合成演示数据，不包含用户音乐、账号、个人署名或真实任务记录；演示音符不代表模型生成质量。 Screenshots show the current desktop UI with synthetic demo data, not personal libraries or evidence of model quality.
+界面截图使用示例数据。 Screenshots use sample data.
 
 <a id="简体中文"></a>
 ## 简体中文
 
-Startrail 是面向 **Windows 电脑端、经典 Malody 4K** 的本地制谱工具。简易台适合整曲生成；高级台提供音轨准备、区域规划、逐区域重做、A/B 候选和成品组装。当前维护范围为电脑端。
+Startrail 是面向 **Windows 电脑端、经典 Malody 4K** 的本地制谱工具。简易台适合整曲生成；高级台支持音轨准备、区域规划、局部重做、A/B 候选和曲包导出。
 
-**多首或歌单制谱，更推荐让 Codex 使用本仓库的 Skill 安排自动任务。** 把网易云歌单、喜欢的音乐人、曲目数量和难度偏好交给 Codex，由它选曲、核验音源、通过现有本地服务提交任务并检查交付，省去逐首在前端设置和提交。网页适合试听试玩、编辑区域和比较候选；单曲也可继续手动生成。
-
-`main` 包含当前工作流；`v1` 保留此前 GitHub 版本。新主分支公开运行代码、必要模型配置、测试、使用说明和下方明确选定的 Demo。其余个人音乐、曲包、密钥、Cookie、实验数据和内部开发报告留在本机。
+**多首或歌单制谱，推荐让 Codex 使用本仓库的 Skill 安排自动任务。** 提供网易云歌单、音乐人偏好、曲目数量和难度目标，由 Codex 选曲、准备音源、提交本地任务并整理成品。网页用于单曲制谱、试听试玩、区域编辑和候选比较。
 
 ### 先玩一下：六首 Demo，Expert / Master 都有
 
-这些是已经导入 Malody V 的成品包，每包包含音频、封面和两档谱面，**不需要安装制谱模型即可导入游玩**。
+每个 MCZ 包含完整音轨、封面和 Expert / Master 两张谱面，下载后即可导入 Malody V 游玩。
 
 | 曲目 | Expert / Master 平均 NPS | 下载 |
 | --- | --- | --- |
@@ -44,7 +42,7 @@ Startrail 是面向 **Windows 电脑端、经典 Malody 4K** 的本地制谱工�
 | 魔女(真) sinka ver. · V.W.P | 10.42 / 12.13 | [MCZ](demos/witch-shin-vwp.mcz) |
 | Night of Bloom (feat. nayuta) · Kirara Magic / Xomu / nayuta | 11.07 / 13.47 | [MCZ](demos/night-of-bloom.mcz) |
 
-**每首一段 30 秒视频**：×3 流速、60 FPS，Expert / Master 并排显示；按键音采用 Malody V 内置 `hit-4`，跟随 Master 音符头触发。下方六个播放器可直接在线播放；若默认静音，点击音量按钮即可听到原曲与按键音。
+**每首 30 秒，×3 流速、60 FPS，Expert / Master 并排展示。** 播放器支持直接在线播放；点击音量按钮可听到原曲和 Malody V `hit-4` 按键音。
 
 <table>
 <tr>
@@ -103,270 +101,149 @@ https://github.com/user-attachments/assets/4054134b-8caf-489e-8a8d-89d48285ba7e
 </tr>
 </table>
 
-以上为真实谱面数据渲染，非 Malody V 实机录屏。曲包下载、导入、哈希和指标说明见 [Demo 文件夹](demos/README.md)。
-
-### 推荐：让 Codex 根据歌单安排任务
-
-先按下方快速开始部署并启动服务，再在 Codex 中打开本项目，提交类似任务：
-
-```text
-先读取 skills/malody-4k/SKILL.md，复用本地已经运行的制谱服务。
-根据这个网易云歌单挑选 20 首：<歌单链接>，优先 <音乐人>，与已有成品去重。
-使用高级制谱流程，生成键盘 4K Expert / Master，目标 NPS 分别为 9–12 / 11–15。
-每首最多尝试 3 个候选，核对完整录音、封面和作者，保存断点与实际参数。
-完成后回读最终 MCZ，检查密度、局部负担和档位差，只交付选定成品。
-```
-
-数量、物量和重试预算按自己的偏好修改。网易云歌单确定选曲身份，完整音源需要逐首核验；拿不到可靠版本时报告待处理。仓库不自带已启用的 Codex 定时任务，网页也没有新增歌单按钮。
-
-详见 [Codex 歌单工作流、任务模板与批量提交](docs/codex-workflow.md)、[制谱 Skill](skills/malody-4k/SKILL.md) 和 [质量检查与 Malody V 导入](docs/chart-quality.md)。本地已有累计 **120 首**的批量运行案例；生成结束、导入文件回读和真人试玩分别记录。
-
-### 新版功能
-
-| 工作区 | 可以做什么 |
-| --- | --- |
-| 音乐下载 | 搜索 YouTube、解析 B站视频链接，核对曲名和音乐人后保存原格式音轨；下载与制谱分别提交。 |
-| 简易制谱台 | 选择本地音乐、排键和六档难度，整曲生成后试听、Autoplay、DFJK 试玩及导出。 |
-| 高级制谱台 | 准备完整音轨，分析原曲，试听区域方案，调整边界、合并区域或改变强弱，再确认生成。 |
-| 分离与比较 | Demucs 快速分离、Kim Mel-Band RoFormer 质量档；局部试分离、同位置 A/B 与完整人声／伴奏输入。 |
-| 候选与历史 | 原始模型结果、修订候选和采用版分别保存；局部重做后选择「采用新版」或「保留原版」。 |
-| 曲包库与队列 | 普通／高级成品统一分页、搜索、预览、下载、打开文件夹及多选删除；队列显示准备、分析、生成与完成记录。 |
-| 试听与试玩 | 波形、频谱与四轨共享时钟；试听和试玩互斥，支持跳转、暂停、重试与内嵌结算。 |
-| 外观与署名 | 五套主题、可关闭的鼠标流星、谱师名字设置；署名传递到新谱面与导出包。 |
-| 可选 Agent 修谱 | 配置自己的修谱／听音 API，针对有限窗口提交证据与修订，比较后手动采用。 |
-
-本次更新还公开了可恢复的批量提交工具、显式成品清单导入、可选的多押微错位／单轨负担规则，以及默认清理中间文件的 [存储策略](docs/storage.md)。规则后处理与网页生成的应用范围见 [质量说明](docs/chart-quality.md)。
-
-### 生成流水线
-
-```mermaid
-flowchart TD
-    PL[歌单与音乐人偏好] --> CX[Codex + Skill：选曲、去重与音源核验]
-    CX --> A
-    A[本地音乐 / Local audio] --> C[确认元数据与保留原曲]
-    B[YouTube / B站下载] --> A
-    C --> S[简易台：整曲工作流]
-    C --> P[高级台：开始处理]
-    P --> D[可选完整声部分离]
-    D --> E[原曲 Beat This 分析]
-    E --> F[试听、编辑并确认区域]
-    S --> G[冻结各档 NPS 范围与 BPM 桶]
-    F --> G
-    G --> H[V32 各难度与条件范围独立推理]
-    S --> M[MuG 模型生成]
-    F --> M
-    H --> I[保留模型音符头与原始结果]
-    M --> I
-    I --> J[转换、规则检查与候选比较]
-    J --> K[采用版本、组装与 MCZ 结构检查]
-    K --> L[曲包库 → 人工试听与 Malody 实机复核]
-```
-
-**新版 V32 使用每档 NPS 上下限。** 提交时冻结 Beat This BPM 桶、版本化 NPS→SR 曲线和条件；不同难度及条件范围分别推理。BPM 桶用于生成条件，自动分析结果不默认作为强制 V32 timing 参考。历史任务重试沿用原来冻结的路线。
-
-音符只来自模型生成的音符头。声音证据用于核对现有音符、长条持续声和保守的共同起音对齐，不用于补音符或凑多押。确认的错开节奏应保留。密度是否落在目标范围、音乐是否准确、实际手感是否合适，是三个不同问题。
+视频由谱面数据渲染。完整曲包和导入步骤见 [Demo 文件夹](demos/README.md)。
 
 ### 快速开始
 
-需要 **Windows 10/11 x64、Python 3.12 x64 和 Git for Windows**。V32 需要兼容锁文件中 CUDA 13.0 PyTorch wheel 的 NVIDIA GPU 与驱动。主环境使用 PyTorch 2.5.1 + CUDA 12.4，V32 使用隔离的 PyTorch 2.10.0 + CUDA 13.0；依赖以仓库锁文件为准。模型和环境会占用数十 GB，另需为音乐与曲包预留空间。
+需要 **Windows 10/11 x64、Python 3.12 x64 和 Git for Windows**。V32 需要支持 CUDA 13.0 的 NVIDIA GPU 与驱动。模型与环境需要数十 GB 存储空间。
 
 ```powershell
 git clone --recurse-submodules https://github.com/DokiDokiYuyuko/Malody-Chart-Forge.git
 cd Malody-Chart-Forge
 ```
 
-1. 双击 **`一键配置环境.bat`**，选择 MuG、V32 或两者。按提示填写可选镜像、Hugging Face 端点和代理；留空使用默认配置。脚本使用锁文件并下载、校验所选模型，MuG 下载前需确认上游使用条款。
-2. **新版 V32 与高级台还需要 Beat This 分析环境**，在 PowerShell 执行：
+1. 双击 **`一键配置环境.bat`**，选择 MuG、V32 或两者，按提示完成依赖安装和模型下载。
+2. 使用 V32 或高级台时，安装 Beat This 分析环境：
 
    ```powershell
    .\.venv\Scripts\python.exe tools\setup_beat_analysis.py
    ```
 
-3. 双击 **`启动制谱台.bat`**，或运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1`。启动器会打开本机网页，通常是 `http://127.0.0.1:8765`。初始化时 CMD 可能暂时没有进度文字；错误日志在 `logs/server.stderr.log`。已有旧版服务时，按启动器提示关闭旧服务再启动。
+3. 双击 **`启动制谱台.bat`**，打开本机网页，默认地址为 `http://127.0.0.1:8765`。
 
-只使用简易台 MuG 时，可跳过 Beat This。缺少对应环境或权重时，相关功能会明确报告不可用。启动器只绑定 localhost。
+启动问题可查看 `logs/server.stderr.log`。手动安装、模型版本、可选声部分离与 YouTube 登录设置见 [安装与模型说明](models/README.md)。
 
-已有克隆请先保存本地修改，然后更新 `main` 并执行 `git submodule update --init --recursive`；现有用户数据应保留在原目录。旧版本可从 [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1) 单独克隆或检出，不要在有未保存工作时直接切换。
+更新已有安装：保存本地修改，更新 `main` 后运行 `git submodule update --init --recursive`。旧版源码见 [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1)。
 
-<details>
-<summary>手动安装与可选组件</summary>
+### 推荐：让 Codex 根据歌单安排任务
 
-主环境与 MuG：
+启动制谱服务，在 Codex 中打开本项目，提交类似任务：
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
-.\.venv\Scripts\python.exe tools\download_file.py https://huggingface.co/ayousanz/Mug-Diffusion-model/resolve/main/model.ckpt models\mug-diffusion\v1.0.0\model.ckpt --workers 4 --sha256 af6ab91337d0ef6b518367082ac3f849448c6daaa01fd987678fb25ea44ca184
-.\.venv\Scripts\python.exe tools\validate_mug_install.py
+```text
+读取 skills/malody-4k/SKILL.md，使用已运行的本地制谱服务。
+从这个网易云歌单挑选 20 首：<歌单链接>，优先 <音乐人>，与已有成品去重。
+生成键盘 4K Expert / Master，目标 NPS 分别为 9–12 / 11–15。
+每首最多尝试 3 个候选，核对完整录音、封面和作者。
+完成后检查谱面，整理选定的 MCZ 曲包和结果汇总。
 ```
 
-V32：
+数量、难度和尝试次数可按偏好调整。歌单用于选曲，音源可使用本地文件或经过核验的在线录音。需要导入游戏时，补充 Malody V 的 `chart` 目录。
 
-```powershell
-py -3.12 -m venv runtime\mapperatorinator-venv
-.\runtime\mapperatorinator-venv\Scripts\python.exe -m pip install -r runtime\mapperatorinator-requirements-lock.txt
-.\.venv\Scripts\python.exe tools\download_mapperatorinator.py
-.\.venv\Scripts\python.exe tools\download_mapperatorinator.py --base
-.\runtime\mapperatorinator-venv\Scripts\python.exe tools\validate_v32_install.py
-.\.venv\Scripts\python.exe tools\setup_beat_analysis.py
-```
+详见 [Codex 歌单工作流](docs/codex-workflow.md) 和 [制谱 Skill](skills/malody-4k/SKILL.md)。
 
-可选声部分离，分别使用独立环境：
+### 功能
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup_separation.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup_roformer.ps1
-```
-
-一键配置会尝试安装 yt-dlp；在线下载需要网络。**`一键连接YouTube.bat`** 使用专用 Edge 登录窗口，把明确选择导入的登录 Cookie 保存在被忽略的 `private/` 中，不使用日常浏览器个人资料。此可选入口需要 Node.js 与 Microsoft Edge；普通公开音源先尝试匿名下载。也可参考 `runtime/music-source-settings.example.json` 配置本地 Cookie 文件。不要上传 Cookie、登录目录或实际设置文件。
-
-模型版本和公开校验值见 [`models/README.md`](models/README.md)。
-
-</details>
-
-### 网页手动制谱
-
-**简易台：** 先从本地选择音乐，核对曲名、音乐人和谱师，选择排键与难度。V32 每档填写 NPS 范围；生成后通过难度标签切换预览，用试听、Autoplay 或 DFJK 试玩检查结果，再下载 MCZ。单档迭代会保留新旧版本；实际是否复用模型缓存或再次推理取决于任务冻结的生成路线。
-
-**高级台：** 导入音频或 MCZ，选择难度、排键与原曲／声部输入，点击 **「开始处理」**。试听建议的舒缓／常规／密集区域，可以改变划分粗细、拖动边界、合并或调整强弱，再点击 **「确认方案并生成」**。导入和切换声部本身不会启动处理。
-
-合格结果可填充空白区域；已有采用版的区域保留原选择。局部重做后同位置比较 A/B，明确选择新版或原版。失败区域有独立重试入口。设置中提供多组合、模型参数、种子、BPM 桶、精确规则和手动 timing。自动检测不是可靠节拍真值；显式确认的手动参考另行处理。
-
-导出检查全部选定组合并复用或建立新成品。主动排除的区域同时移除对应音乐和音符；准备时间、接缝和长条处理写入报告。包内采用经典 `0/` 路径、UTF-8 MC 和 OGG Vorbis 音轨。
-
-### 下载、队列与曲包库
-
-- YouTube 每页最多 24 条有效结果，按视频 ID 去重；下一页继续搜索，上一页复用已载入结果。B站使用视频链接、BV 号或分享短链解析，第三方解析服务的可用性可能影响结果。
-- 下载前核对名称，源音轨按实际格式保存；下载不会自动分析或排队制谱。成品音轨另转为 OGG Vorbis，不自动降噪。
-- 普通与高级成品统一保存在 `outputs/曲包/<曲名>/<时间-短编号>/`，包含 MCZ、`report.json` 和 `manifest.json`。
-- 曲包库每页 12 条，支持搜索、类型筛选、单删和跨页多选；全选仅当前页。删除交付副本会保留原任务、音乐和采用版本。
-- 重启后等待任务暂停，需要手动继续；中断任务可重试。默认串行；通过当前设备硬件基准后，才开放最多两路任务并行。V32 内部推理流设置与队列任务并行是不同配置。
-- 默认只裁除末尾连续至少 1 秒、所有声道完全为零的 PCM。微弱混响、前奏和中途静音保留；可选择保留片尾，原始音乐始终保留。
-
-### 数据、隐私与质量范围
-
-| 目录 | 内容 |
+| 工作区 | 可以做什么 |
 | --- | --- |
-| `malody_studio/`, `web/`, `tools/` | 应用、桌面网页和运行工具 |
-| `models/`, `runtime/`, `vendor/` | 公开配置、独立环境和固定上游源码；权重另下载 |
-| `data/calibrations/`, `util/nps_star_mapping/` | 运行必需的汇总校准曲线与查询代码，包含版本和哈希 |
-| `skills/malody-4k/`, `docs/` | 可公开的 Codex 制谱约束、服务接口和使用文档 |
-| `data/音乐/`, `uploads/` | 本地音源，Git 忽略 |
-| `work/`, `outputs/`, `cache/`, `logs/`, `private/` | 批次状态、曲包、候选、缓存、日志和私密配置，Git 忽略 |
+| 音乐下载 | 搜索 YouTube、解析 B站链接，确认曲名和音乐人后保存音轨。 |
+| 简易制谱台 | 选择本地音乐、排键和难度，整曲生成后试听、Autoplay、DFJK 试玩及导出。 |
+| 高级制谱台 | 分析音轨、试听与编辑区域、调整强弱，按区域生成或重做谱面。 |
+| 分离与比较 | Demucs 快速分离、Kim Mel-Band RoFormer 质量档，人声／伴奏输入与同位置 A/B 试听。 |
+| 候选与历史 | 保存生成版本，比较局部重做结果，选择采用新版或保留原版。 |
+| 曲包库与队列 | 搜索、预览、下载、打开文件夹及多选删除，查看任务进度和历史。 |
+| 试听与试玩 | 波形、频谱与四轨同步播放，支持跳转、暂停、重试与结算。 |
+| 外观与署名 | 五套主题、鼠标流星开关和谱师署名设置。 |
+| 可选 Agent 修谱 | 连接自己的修谱／听音 API，比较建议的修订后选择采用。 |
 
-本地推理不发送音频到云端。在线搜索／下载会访问对应平台；可选 Agent 仅在用户启动评审后向所配置服务发送窗口证据，音频片段可单独开关。持久 API 密钥可使用 Windows 用户加密保存。
+### 使用流程
 
-默认 `retain_debug_artifacts=false`：保留原曲、不可变谱面、采用版本、成品包、实际参数与摘要，用完清理临时 WAV 和详细诊断。单曲异常时创建独立调试重试；不会因此批量删除历史成果。详见 [文件保留与排查](docs/storage.md)。Codex 接收的任务内容和工具结果按其配置处理，本地制谱推理不代表整个 Codex 工作流离线运行。
+```mermaid
+flowchart TD
+    PL[歌单与偏好] --> CX[Codex + Skill：选曲与准备音源]
+    CX --> G[本地服务生成]
+    A[本地音乐 / 在线下载] --> S[简易台：整曲生成]
+    A --> P[高级台：分析与编辑区域]
+    P --> G
+    S --> R[试听、试玩与候选比较]
+    G --> R
+    R --> E[导出 MCZ → Malody V 游玩]
+```
 
-NPS 曲线从 `1 ≤ SR < 7` 的样本拟合，**SR ≥ 7 完全来自低星趋势外推**。曲线描述统计关系，不保证模型输出落在目标范围。未达到密度目标应报告不足，不能加音符伪装达标。未解决或回滚的对齐组仍需要人工核验。
+**简易台：** 选择音乐，确认曲名、音乐人和谱师，设置排键与难度。V32 支持为每档填写 NPS 范围。生成后切换难度试听或试玩，再导出曲包。
 
-自动化测试与 MCZ 结构检查不能证明音乐准确、实际 Malody 导入成功或人工手感通过。请在分享前实际试听、导入和试玩。
+**高级台：** 导入音频或 MCZ，选择难度和音源，点击「开始处理」。试听区域方案，调整边界、合并区域或改变强弱，再点击「确认方案并生成」。局部重做后可同位置比较 A/B，并选择采用的版本。
 
-### 自动化检查
+成品保存在 `outputs/曲包/`，可在曲包库中预览、下载和管理。服务重启后，暂停的任务可在队列中继续。生成后建议试听和试玩，并按手感调整难度与区域。
+
+### 文件与联网
+
+原曲、谱面版本和成品保存在本机，临时文件自动清理；排查单曲问题时可开启「保留调试文件」。详见 [存储说明](docs/storage.md)。
+
+制谱模型在本地运行。在线搜索与下载连接对应音乐平台；启用 Agent 评审时，会向所配置的服务发送评审片段，音频发送可单独开关。提供给 Codex 的任务和工具结果按 Codex 的配置处理。
+
+### 开发与技术文档
+
+- [谱面指标、生成条件与导入工具](docs/chart-quality.md)
+- [批量提交与服务接口](skills/malody-4k/references/service-api.md)
+- [模型版本、依赖与安装](models/README.md)
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 node --test tests/*.cjs tests/*.js
 ```
 
-部分浏览器与模型集成测试需要额外环境，缺少时会跳过。测试结果应与实际模型、听音和游戏验证分开解释。仓库不附带用户歌曲或生成曲包作为测试资源。
+部分集成测试需要浏览器或模型环境。
 
 ### 来源与许可
 
-本项目为独立社区工具，与 Malody 及模型作者无隶属关系。仓库没有为整个应用声明根级许可证；各上游组件的许可不能自动扩展到整个应用。
+本项目为独立社区工具。模型与组件使用各自的上游许可：
 
-- [MuG Diffusion](https://github.com/Keytoyze/Mug-Diffusion) / [权重来源](https://huggingface.co/ayousanz/Mug-Diffusion-model)：遵守上游对模型权重和生成谱面的非商业限制，并保留 AI 来源说明。
-- [Mapperatorinator](https://github.com/OliBomby/Mapperatorinator) / [V32 固定版本](https://huggingface.co/OliBomby/Mapperatorinator-v32/tree/74f22583400d259bf424819e11027c17933efe54)：上游代码／模型声明以其 MIT 文件和模型卡为准。
-- [Beat This](https://github.com/CPJKU/beat_this)、[Demucs](https://github.com/facebookresearch/demucs)、[RoFormer 推理来源](https://github.com/ZFTurbo/Music-Source-Separation-Training)：保留各组件原始许可；模型权重按各自来源条款使用。
-- 音乐、封面和输入谱面由其权利人保留权利。下载、生成和打包不会授予转载、商业使用或分享权限。
+- [MuG Diffusion](https://github.com/Keytoyze/Mug-Diffusion) / [模型权重](https://huggingface.co/ayousanz/Mug-Diffusion-model)：非商业使用，分享生成谱面时保留 AI 来源说明。
+- [Mapperatorinator](https://github.com/OliBomby/Mapperatorinator) / [V32](https://huggingface.co/OliBomby/Mapperatorinator-v32/tree/74f22583400d259bf424819e11027c17933efe54)：代码与模型条款见上游 MIT 文件和模型卡。
+- [Beat This](https://github.com/CPJKU/beat_this)、[Demucs](https://github.com/facebookresearch/demucs)、[RoFormer 推理来源](https://github.com/ZFTurbo/Music-Source-Separation-Training)：许可与权重条款见各自项目。
+
+音乐、封面与输入谱面的权利归其权利人所有。应用整体尚未指定许可证。
 
 ---
 
 <a id="english"></a>
 ## English
 
-**Startrail · Malody Chart Forge** is a local authoring tool for **classic Malody 4K on Windows desktop**. The Simple studio provides a whole-song workflow. The Advanced studio adds full-length source preparation, region planning, independent regeneration, A/B candidates and package assembly.
+**Startrail · Malody Chart Forge** generates classic Malody 4K charts locally on Windows. The Simple studio handles whole songs; the Advanced studio supports region planning, stems, local regeneration and A/B review.
 
-**For multiple songs or playlists, we recommend asking Codex to use the repository's Skill to arrange automatic tasks.** Give it playlist links, artist preferences, song count and difficulty goals. Codex can verify recordings, prepare sources, submit the existing local queue and check deliveries. The web studios support listening, practice, region editing and A/B review, as well as manual single-song generation.
+**For playlists, we recommend asking Codex to use the repository's Skill.** Give it the playlist, artist preferences, song count and difficulty goals. Codex prepares sources, submits local tasks and organizes the resulting packages. Use the web studio for individual songs, listening, practice and editing.
 
-`main` contains the current workflow. [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1) preserves the previous GitHub version. The public tree contains application code, required configuration, tests, user documentation and the explicitly selected demos. Other personal music, packages, credentials, research outputs and internal development reports stay local.
+### Demos
 
-### Play the demos first
-
-The [demo folder](demos/README.md) contains **six ready-to-import MCZs / twelve charts**, each with full audio, cover art and both Expert and Master. Titles and performer credits use the original recording metadata throughout the gallery and videos. No model installation is needed to play these packages.
-
-Watch the [six separate 30-second previews](demos/README.md): ×3 scroll speed, 60 FPS, actual Expert/Master chart data side by side, and Malody V built-in `hit-4` sound triggered by Master heads. The two-column gallery above embeds all six videos for online playback; unmute a player to hear the recording and key sounds. These are chart-data renders, not in-game recordings. Import instructions, hashes and measured NPS are in the [demo guide](demos/README.md).
-
-### Recommended: playlist tasks with Codex
-
-Install and start the local service first. Open this project in Codex and ask it to read `skills/malody-4k/SKILL.md`, then select songs from your playlist, verify full recordings and metadata, generate your requested difficulties within an attempt budget, and read back selected final MCZs. The Chinese example above is a configurable task, not a fixed difficulty policy.
-
-See the [workflow and task template](docs/codex-workflow.md), [Skill](skills/malody-4k/SKILL.md), [service API reference](skills/malody-4k/references/service-api.md) and [quality/import guide](docs/chart-quality.md). NetEase playlist identity does not guarantee a downloadable full recording. The repository includes neither an enabled Codex schedule nor a web playlist button. A local 120-song production case is documented separately from human playtesting.
-
-### What changed
-
-- **Codex playlist workflow:** published Skill, reusable task instructions, durable serial submission and explicit delivery-manifest import into a user-selected Malody V directory.
-- **Optional delivery checks:** conservative micro-chord alignment, lane-comfort rules and model-note reuse guards; their scope is documented rather than assumed for every web result.
-- **Production storage:** clean consumed intermediate audio and verbose diagnostics by default; preserve originals, immutable charts, actual parameters and delivery history, with per-song debug opt-in.
-- **Separate music downloads:** paginated YouTube search, Bilibili link resolution, metadata confirmation and original-format local audio. Downloading does not start analysis or chart generation.
-- **Independent V32 targets:** each difficulty has an NPS minimum and maximum. Submissions freeze BPM buckets and the versioned NPS-to-SR calibration; difficulties and condition spans run independently. Historical retries retain their saved route.
-- **Advanced region workflow:** import → Start processing → audition and edit suggested regions → Confirm plan and generate → review, redo or export. Adjust granularity, boundaries and intensity without repeating unchanged audio analysis.
-- **Stems and A/B:** optional Demucs or Kim Mel-Band RoFormer, local trials, aligned listening and full vocal/accompaniment inputs. Original audio, raw model charts, candidates and adopted versions are preserved.
-- **Synchronized desktop playback:** waveform, spectrum and four lanes share the playback clock. Preview and gameplay are mutually exclusive; Autoplay, DFJK practice, seek, pause and retry are embedded.
-- **Unified library and history:** Simple and Advanced deliveries share search, pagination, preview, download, folder opening and multiple deletion. Preparation, analysis and generation have explicit queue states and retry actions.
-- **Author and appearance settings:** configurable chart-author metadata, five palettes and optional meteor trails. Public defaults use the neutral name `Startrail`.
-- **Optional Agent review:** use your own repair/listening API to propose bounded evidence-based changes, then compare and apply manually.
-
-The [pipeline diagram](#生成流水线) shows both routes. New notes come from model-generated heads. Sound evidence may validate existing notes, sustain and conservative common-attack alignment; it does not fill an NPS quota. Confirmed staggered rhythms must remain intact. Density compliance, musical accuracy and game feel require separate evaluation.
+[Six playable MCZs](demos/README.md) include full audio, artwork and Expert / Master charts. The players above show 30-second chart-data renders at ×3 scroll speed and 60 FPS, with Malody V `hit-4` sound. Unmute a player to hear the music and key sounds, or download a package to play in Malody V.
 
 ### Install and start
 
-Use Windows 10/11 x64, Python 3.12 x64 and Git for Windows. V32 requires an NVIDIA GPU and a driver compatible with the pinned CUDA 13.0 PyTorch wheel. The main environment uses PyTorch 2.5.1 + CUDA 12.4; V32 uses a separate PyTorch 2.10.0 + CUDA 13.0 environment. Use the supplied dependency locks and reserve space for several environments, weights, music and generated packages.
+Use Windows 10/11 x64, Python 3.12 x64 and Git for Windows. V32 requires an NVIDIA GPU and a CUDA 13.0-compatible driver. Reserve tens of GB for models and environments.
 
-```powershell
-git clone --recurse-submodules https://github.com/DokiDokiYuyuko/Malody-Chart-Forge.git
-cd Malody-Chart-Forge
-```
+1. Clone this repository with `--recurse-submodules`.
+2. Run **`一键配置环境.bat`** and select MuG, V32 or both.
+3. For V32 or the Advanced studio, run `.\.venv\Scripts\python.exe tools\setup_beat_analysis.py`.
+4. Run **`启动制谱台.bat`**. The default studio URL is `http://127.0.0.1:8765`.
 
-1. Run **`一键配置环境.bat`**, choose MuG, V32 or both, and enter optional mirror/proxy settings. It installs the locked environments, downloads and verifies selected weights, and checks the installation. Review MuG's upstream terms before downloading it.
-2. **New V32 submissions and the Advanced studio require Beat This:**
+See [model setup](models/README.md) for manual installation, optional separation and YouTube login. Startup errors are logged in `logs/server.stderr.log`. After updating an existing checkout, run `git submodule update --init --recursive`. The earlier version is available on [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1).
 
-   ```powershell
-   .\.venv\Scripts\python.exe tools\setup_beat_analysis.py
-   ```
+### Playlist tasks and authoring
 
-3. Run **`启动制谱台.bat`** or `powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1`. The launcher opens localhost, normally `http://127.0.0.1:8765`. Cold initialization can be silent; inspect `logs/server.stderr.log` if startup fails. An incompatible running service must be closed before restarting.
+Start the local service and open this project in Codex. Ask it to read `skills/malody-4k/SKILL.md`, then provide a playlist, artist preferences, song count, difficulty/NPS goals and attempt budget. Include your Malody V `chart` directory if you want the packages imported. See the [workflow and task template](docs/codex-workflow.md).
 
-Simple MuG generation does not require Beat This. Missing environments or weights disable the related features. The [manual installation commands](#快速开始) and [`models/README.md`](models/README.md) cover individual components. Optional separation uses `tools/setup_separation.ps1` and `tools/setup_roformer.ps1` in isolated environments.
+In the Simple studio, select music and difficulties, generate, then listen or practice before export. In the Advanced studio, import audio or MCZ, click **Start processing**, edit the suggested regions and choose **Confirm plan and generate**. Compare local revisions with A/B and select the versions to export.
 
-For existing clones, save local changes before updating `main`, then run `git submodule update --init --recursive`. Keep user data in its existing directories. Use a separate checkout to compare the archived `v1` branch.
+Both studios include synchronized waveform, spectrum and four-lane previews, Autoplay, DFJK practice, configurable chart-author credits and five themes. The library provides search, previews, downloads and multiple deletion. Finished packages are saved under `outputs/曲包/`.
 
-Optional **`一键连接YouTube.bat`** requires Node.js and Microsoft Edge. It opens a dedicated login profile and saves explicitly imported cookies under ignored `private/`; it does not use the everyday browser profile. Public downloads try anonymous access first. Never commit cookies or the actual local music-source settings.
+### Files and network access
 
-### Authoring and export
+Original music, chart versions and packages are saved locally; temporary files are cleaned automatically. Enable debug retention when investigating a song. See [storage](docs/storage.md).
 
-**Simple:** select local audio, confirm title, artist and chart author, choose patterns and difficulties, and set per-tier V32 NPS ranges. Review the completed result using difficulty tabs, listening, Autoplay or DFJK practice, then export. Iteration preserves chart versions; whether it reuses cached notes or runs the model again depends on the frozen task policy.
+Chart models run locally. Online searches and downloads connect to the selected platforms. Optional Agent review sends excerpts to your configured service, with a separate audio switch. Tasks and tool results supplied to Codex follow its configuration.
 
-**Advanced:** import audio or MCZ, choose difficulty/pattern/source mode and click **Start processing**. Audition the calm/regular/dense region proposal, edit the plan and click **Confirm plan and generate**. Imports and source changes do not automatically start processing. Valid results fill empty regions; an existing adopted version stays selected. Redo a region, compare A/B at the same position and explicitly adopt or keep the original. Failed regions can be retried independently.
+### Technical documentation and sources
 
-Settings expose multiple combinations, model parameters, seeds, BPM buckets, precise rules and manual timing. Beat This informs arrangement and generation conditions; automatic strong V32 timing references remain disabled. Explicitly confirmed manual references are handled separately.
+See [quality and import](docs/chart-quality.md), [service APIs](skills/malody-4k/references/service-api.md) and [model setup](models/README.md). Run tests with `.\.venv\Scripts\python.exe -m pytest -q` and `node --test tests/*.cjs tests/*.js`; some integration tests require browser or model environments.
 
-Export checks selected combinations and creates or reuses a matching delivery. Excluding a region removes both its audio and notes. Preparation time, seams and hold adjustments are reported. Packages use classic `0/` paths, UTF-8 MC and OGG Vorbis audio.
-
-### Library, data and evaluation
-
-Deliveries live under `outputs/曲包/<title>/<timestamp-short-id>/` with MCZ, report and manifest files. The library shows 12 records per page. Select-all affects the current page; deleting delivery copies preserves source tasks, music and adopted charts. Waiting tasks pause after a restart and must be resumed. Queue jobs are serial by default; at most two concurrent jobs are enabled only after the current device passes its hardware benchmark. V32 internal inference streams are a separate setting.
-
-Only exact multichannel zero PCM at the end, lasting at least one second, is trimmed by default. Reverb, quiet sounds, intros and interior silence remain. Original music is retained and tail preservation can be selected.
-
-Local inference does not upload audio. Online search/download accesses the selected services. Optional Agent review sends window evidence only when requested; audio excerpts have a separate switch, and persistent API credentials can use Windows user encryption.
-
-Production defaults to `retain_debug_artifacts=false`; see [storage and diagnostics](docs/storage.md). Consumed temporary audio and verbose diagnostics are cleaned while originals, immutable versions and concise records remain. Information supplied to Codex follows its configuration; local chart inference does not make the entire Codex workflow offline.
-
-The calibration is fitted only from **`1 ≤ SR < 7`** samples. **SR ≥ 7 is extrapolated exclusively from lower-star trends.** This statistical mapping cannot guarantee generated NPS or official Malody difficulty. Underfilled targets and unresolved alignment groups remain outstanding review items. Unit tests and MCZ structure checks do not establish musical accuracy, actual game import or human playability. Listen, import and play-test before sharing.
-
-Run application checks with `.\.venv\Scripts\python.exe -m pytest -q` and `node --test tests/*.cjs tests/*.js`. Some integration/browser checks require additional dependencies and may be skipped when unavailable. No personal songs or generated packages are shipped as test resources.
-
-### Sources and terms
-
-This independent community project is not affiliated with Malody or the model authors. There is no root license for the whole application; upstream licenses do not automatically license all Startrail code. Follow the original terms for [MuG](https://github.com/Keytoyze/Mug-Diffusion), [Mapperatorinator](https://github.com/OliBomby/Mapperatorinator), [Beat This](https://github.com/CPJKU/beat_this), [Demucs](https://github.com/facebookresearch/demucs) and the [RoFormer inference source](https://github.com/ZFTurbo/Music-Source-Separation-Training). MuG weights and generated charts have upstream non-commercial restrictions. Retain AI provenance when sharing charts. Audio, artwork and input charts remain subject to their owners' rights; this tool grants no redistribution or commercial-use rights.
+Component licenses and model terms are linked in the source list above. MuG weights and generated charts are for non-commercial use; retain AI provenance when sharing charts. Music and artwork rights belong to their owners. The application as a whole has no designated license.

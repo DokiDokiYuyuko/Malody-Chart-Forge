@@ -1,31 +1,25 @@
 # Release notes · 更新记录
 
-## Codex playlist tasks and production delivery — 2026-10-15
+## 歌单任务与可玩 Demo — 2026-10-15
 
-- Add six ready-to-import demo MCZs with both Expert and Master (twelve charts), artwork/audio, portable hashes and measured density. Embed GitHub attachment players for online playback in both READMEs, with a two-column gallery of six 30-second previews at ×3 scroll / 60 FPS with built-in hit-4 audio; distinguish chart-data renders from actual gameplay recording.
-- Use original recording titles and credited performers in the demo tables, video gallery, thumbnail captions, rendered videos and media metadata.
-- Recommend using Codex with the published `malody-4k` Skill to arrange playlist tasks; keep the web studios focused on manual authoring, listening and candidate review.
-- Publish a reusable Advanced batch submitter with frozen manifests, durable intent/receipts, serial polling and recovery without automatic resubmission of uncertain or failed requests.
-- Add a portable classic-4K delivery importer: explicit package selection, source-hash checks, artwork/artist validation, independent file readback, configurable game directory and preserved import history.
-- Publish conservative micro-chord alignment, single-lane comfort checks and local density-reuse guards. Import-time correction is opt-in and preserves the original MCZ; it is not a claim that all web generation runs these rules.
-- Default production to compact artifact retention, including shared-input lifecycle, transient preview cleanup and per-song debug retries that preserve frozen input identity and adopted versions.
-- Keep observed downbeats when a provisional local tempo grid is rejected, instead of retaining its projected anchors as timing evidence.
-- Add bilingual playlist, storage and quality guides, an API reference, and tests for batch recovery and delivery import. Keep personal task controllers, music, packages and one-off storage maintenance local.
-- Document the local 120-song production case separately from listening and human-playtest claims.
+- 推荐通过 Codex + `malody-4k` Skill 按歌单安排制谱任务，支持选曲、音源准备、批量生成和成品整理。
+- 新增支持断点恢复的批量提交工具，以及可指定 Malody V 目录的曲包导入工具。
+- 新增可选的多押微错位对齐、单轨负担检查和已有模型音符的密度检查。
+- 自动清理用完的中间文件，支持为单曲保留调试文件。
+- 修复局部节拍网格被拒绝时的强拍记录处理。
+- 新增六首可玩 Demo，包含 Expert / Master 共十二张谱面。
+- README 内嵌每首 30 秒、×3 流速、60 FPS 的视频预览，配有 Malody V `hit-4` 按键音。
+- 更新中英文使用文档、安装说明与服务接口参考。
 
-推荐由 Codex 结合 Skill 根据歌单提交自动任务，减少逐首在前端操作。公开可恢复的批量提交、可配置的成品导入和可选质量规则；补齐默认中间文件清理及单曲调试说明。网页继续用于试听、试玩、编辑和 A/B 复核；不新增歌单按钮或预先启用定时任务。
+Codex playlist workflow, resumable batch submission, configurable Malody V import, optional chart checks and automatic temporary-file cleanup. Six playable demos include Expert / Master charts and embedded 30-second video previews.
 
-## Current desktop workflow — 2026-10-08
+## 桌面制谱流程更新 — 2026-10-08
 
-- Separate music downloads from generation; add Bilibili resolution and dedicated YouTube login.
-- Replace new V32 density routing with independent per-difficulty NPS ranges, frozen BPM buckets and versioned NPS-to-SR calibration.
-- Update Advanced processing, region planning, stem generation, immutable candidates, local redo and A/B adoption.
-- Improve synchronized waveform/spectrum/gameplay transport, chart-author metadata and export handling.
-- Unify Simple/Advanced delivery browsing, pagination, multi-delete and completed-task history.
-- Preserve historical retry policies and original audio/chart versions; distinguish density, musical review and actual game evidence.
-- Refresh bilingual README, workflow diagram and desktop screenshots using synthetic demo data.
-- Remove internal development reports, old screenshots, local readiness records and personal defaults from the current public tree.
-- Preserve the previous GitHub main commit as the `v1` branch.
+- 独立音乐下载页面，支持 YouTube 搜索、B站链接解析和 YouTube 登录。
+- V32 支持每档独立设置 NPS 范围与生成条件。
+- 高级台支持区域规划、声部分离、局部重做和 A/B 候选比较。
+- 改进波形、频谱与四轨的同步播放，完善谱师署名和曲包导出。
+- 统一简易台与高级台的曲包库，支持分页、多选删除和任务历史。
+- 新增主题与桌面界面截图。旧版源码见 [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1)。
 
-新版更新包括独立音乐下载、V32 各档 NPS 范围与 BPM 条件、高级台区域工作流、分轨与 A/B、同步试听试玩、署名和导出、统一曲包库与历史。
-旧版源码保存在 `v1`。当前说明只记录公开产品变更；本地实验记录不作为发布文档。
+Desktop workflow updates cover music downloads, independent V32 difficulty targets, Advanced region editing, stems, A/B review, synchronized playback, chart-author credits and the unified package library.
