@@ -44,51 +44,63 @@ Startrail 是面向 **Windows 电脑端、经典 Malody 4K** 的本地制谱工�
 | 魔女(真) sinka ver. · V.W.P | 10.42 / 12.13 | [MCZ](demos/witch-shin-vwp.mcz) |
 | Night of Bloom (feat. nayuta) · Kirara Magic / Xomu / nayuta | 11.07 / 13.47 | [MCZ](demos/night-of-bloom.mcz) |
 
-**每首一段 30 秒视频**：×3 流速、60 FPS，Expert / Master 并排显示；按键音采用 Malody V 内置 `hit-4`，跟随 Master 音符头触发。点击缩略图打开对应视频。
+**每首一段 30 秒视频**：×3 流速、60 FPS，Expert / Master 并排显示；按键音采用 Malody V 内置 `hit-4`，跟随 Master 音符头触发。下方六个播放器可直接在线播放；若默认静音，点击音量按钮即可听到原曲与按键音。
 
 <table>
-  <tr>
-    <td width="50%">
-      <strong>玩具</strong><br>
-      V.W.P<br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/toy-vwp.mp4"><img src="demos/videos/toy-vwp.jpg" width="480" alt="玩具 — V.W.P Expert / Master 30秒预览"></a><br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/toy-vwp.mp4">▶ 播放 30 秒</a> · <a href="demos/toy-vwp.mcz">下载 MCZ</a>
-    </td>
-    <td width="50%">
-      <strong>INTERNET YAMERO (cover)</strong><br>
-      ヰ世界情緒<br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/internet-yamero-isekaijoucho.mp4"><img src="demos/videos/internet-yamero-isekaijoucho.jpg" width="480" alt="INTERNET YAMERO (cover) — ヰ世界情緒 Expert / Master 30秒预览"></a><br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/internet-yamero-isekaijoucho.mp4">▶ 播放 30 秒</a> · <a href="demos/internet-yamero-isekaijoucho.mcz">下载 MCZ</a>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <strong>アンノウン・マザーグース - covered by ヰ世界情緒</strong><br>
-      ヰ世界情緒<br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/unknown-mother-goose-isekaijoucho.mp4"><img src="demos/videos/unknown-mother-goose-isekaijoucho.jpg" width="480" alt="アンノウン・マザーグース - covered by ヰ世界情緒 — ヰ世界情緒 Expert / Master 30秒预览"></a><br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/unknown-mother-goose-isekaijoucho.mp4">▶ 播放 30 秒</a> · <a href="demos/unknown-mother-goose-isekaijoucho.mcz">下载 MCZ</a>
-    </td>
-    <td width="50%">
-      <strong>裏表ラバーズ</strong><br>
-      wowaka / 初音ミク<br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/ura-omote-lovers.mp4"><img src="demos/videos/ura-omote-lovers.jpg" width="480" alt="裏表ラバーズ — wowaka / 初音ミク Expert / Master 30秒预览"></a><br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/ura-omote-lovers.mp4">▶ 播放 30 秒</a> · <a href="demos/ura-omote-lovers.mcz">下载 MCZ</a>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <strong>魔女(真) sinka ver.</strong><br>
-      V.W.P<br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/witch-shin-vwp.mp4"><img src="demos/videos/witch-shin-vwp.jpg" width="480" alt="魔女(真) sinka ver. — V.W.P Expert / Master 30秒预览"></a><br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/witch-shin-vwp.mp4">▶ 播放 30 秒</a> · <a href="demos/witch-shin-vwp.mcz">下载 MCZ</a>
-    </td>
-    <td width="50%">
-      <strong>Night of Bloom (feat. nayuta)</strong><br>
-      Kirara Magic / Xomu / nayuta<br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/night-of-bloom.mp4"><img src="demos/videos/night-of-bloom.jpg" width="480" alt="Night of Bloom (feat. nayuta) — Kirara Magic / Xomu / nayuta Expert / Master 30秒预览"></a><br>
-      <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/videos/night-of-bloom.mp4">▶ 播放 30 秒</a> · <a href="demos/night-of-bloom.mcz">下载 MCZ</a>
-    </td>
-  </tr>
+<tr>
+<td width="50%">
+<strong>玩具</strong><br>
+V.W.P
+
+https://github.com/user-attachments/assets/9520455c-f757-42c6-865c-273f8a9241b1
+
+<a href="demos/toy-vwp.mcz">下载 MCZ · Expert / Master</a>
+</td>
+<td width="50%">
+<strong>INTERNET YAMERO (cover)</strong><br>
+ヰ世界情緒
+
+https://github.com/user-attachments/assets/50ba83da-e8f2-490c-96c8-13861471c37b
+
+<a href="demos/internet-yamero-isekaijoucho.mcz">下载 MCZ · Expert / Master</a>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<strong>アンノウン・マザーグース - covered by ヰ世界情緒</strong><br>
+ヰ世界情緒
+
+https://github.com/user-attachments/assets/32a8160d-af89-48f1-a44e-1ad381505d13
+
+<a href="demos/unknown-mother-goose-isekaijoucho.mcz">下载 MCZ · Expert / Master</a>
+</td>
+<td width="50%">
+<strong>裏表ラバーズ</strong><br>
+wowaka / 初音ミク
+
+https://github.com/user-attachments/assets/129a40b5-c9b1-4cbd-93a3-33b171e72c47
+
+<a href="demos/ura-omote-lovers.mcz">下载 MCZ · Expert / Master</a>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<strong>魔女(真) sinka ver.</strong><br>
+V.W.P
+
+https://github.com/user-attachments/assets/98e91443-50df-4b44-951d-58f0f7687e45
+
+<a href="demos/witch-shin-vwp.mcz">下载 MCZ · Expert / Master</a>
+</td>
+<td width="50%">
+<strong>Night of Bloom (feat. nayuta)</strong><br>
+Kirara Magic / Xomu / nayuta
+
+https://github.com/user-attachments/assets/4054134b-8caf-489e-8a8d-89d48285ba7e
+
+<a href="demos/night-of-bloom.mcz">下载 MCZ · Expert / Master</a>
+</td>
+</tr>
 </table>
 
 以上为真实谱面数据渲染，非 Malody V 实机录屏。曲包下载、导入、哈希和指标说明见 [Demo 文件夹](demos/README.md)。
@@ -283,7 +295,7 @@ node --test tests/*.cjs tests/*.js
 
 The [demo folder](demos/README.md) contains **six ready-to-import MCZs / twelve charts**, each with full audio, cover art and both Expert and Master. Titles and performer credits use the original recording metadata throughout the gallery and videos. No model installation is needed to play these packages.
 
-Watch the [six separate 30-second previews](demos/README.md): ×3 scroll speed, 60 FPS, actual Expert/Master chart data side by side, and Malody V built-in `hit-4` sound triggered by Master heads. The two-column gallery above links to each video. These are chart-data renders, not in-game recordings. Import instructions, hashes and measured NPS are in the [demo guide](demos/README.md).
+Watch the [six separate 30-second previews](demos/README.md): ×3 scroll speed, 60 FPS, actual Expert/Master chart data side by side, and Malody V built-in `hit-4` sound triggered by Master heads. The two-column gallery above embeds all six videos for online playback; unmute a player to hear the recording and key sounds. These are chart-data renders, not in-game recordings. Import instructions, hashes and measured NPS are in the [demo guide](demos/README.md).
 
 ### Recommended: playlist tasks with Codex
 

@@ -15,7 +15,8 @@
     "video_count": 6,
     "keysound": "Malody V embedded hit-4; Master heads only",
     "legacy_overview_file": "preview.mp4",
-    "legacy_overview_duration_seconds": 48
+    "legacy_overview_duration_seconds": 48,
+    "playback": "GitHub attachment players embedded in both READMEs"
   },
   "songs": [
     {
@@ -64,7 +65,8 @@
       "preview_file": "videos/toy-vwp.mp4",
       "preview_poster": "videos/toy-vwp.jpg",
       "preview_sha256": "23f42b0f653a04c135596c42590f8bf23b2b63bd698c486fa1c54dad3cd61db2",
-      "display_name": "玩具 — V.W.P"
+      "display_name": "玩具 — V.W.P",
+      "preview_embed_url": "https://github.com/user-attachments/assets/9520455c-f757-42c6-865c-273f8a9241b1"
     },
     {
       "song_id": "2095790650",
@@ -112,7 +114,8 @@
       "preview_file": "videos/internet-yamero-isekaijoucho.mp4",
       "preview_poster": "videos/internet-yamero-isekaijoucho.jpg",
       "preview_sha256": "de094006dd9ec2058bacfa21e152936b216230fbc8551e952042248332756c22",
-      "display_name": "INTERNET YAMERO (cover) — ヰ世界情緒"
+      "display_name": "INTERNET YAMERO (cover) — ヰ世界情緒",
+      "preview_embed_url": "https://github.com/user-attachments/assets/50ba83da-e8f2-490c-96c8-13861471c37b"
     },
     {
       "song_id": "2060100176",
@@ -160,7 +163,8 @@
       "preview_file": "videos/unknown-mother-goose-isekaijoucho.mp4",
       "preview_poster": "videos/unknown-mother-goose-isekaijoucho.jpg",
       "preview_sha256": "50c935f0122e0bdf2f862b335eae537a6c905c3b765c717d7e467f74de08ad17",
-      "display_name": "アンノウン・マザーグース - covered by ヰ世界情緒 — ヰ世界情緒"
+      "display_name": "アンノウン・マザーグース - covered by ヰ世界情緒 — ヰ世界情緒",
+      "preview_embed_url": "https://github.com/user-attachments/assets/32a8160d-af89-48f1-a44e-1ad381505d13"
     },
     {
       "song_id": "22677436",
@@ -208,7 +212,8 @@
       "preview_file": "videos/ura-omote-lovers.mp4",
       "preview_poster": "videos/ura-omote-lovers.jpg",
       "preview_sha256": "83a341692afe9a984c9c49bb0e1a7e553bab3f95720df15ffbe3c568687cd181",
-      "display_name": "裏表ラバーズ — wowaka / 初音ミク"
+      "display_name": "裏表ラバーズ — wowaka / 初音ミク",
+      "preview_embed_url": "https://github.com/user-attachments/assets/129a40b5-c9b1-4cbd-93a3-33b171e72c47"
     },
     {
       "song_id": "2749390432",
@@ -256,7 +261,8 @@
       "preview_file": "videos/witch-shin-vwp.mp4",
       "preview_poster": "videos/witch-shin-vwp.jpg",
       "preview_sha256": "07d1c78afaa8b88c89af5a285deeb51f89a95d939b7cae466ea647481de86a2a",
-      "display_name": "魔女(真) sinka ver. — V.W.P"
+      "display_name": "魔女(真) sinka ver. — V.W.P",
+      "preview_embed_url": "https://github.com/user-attachments/assets/98e91443-50df-4b44-951d-58f0f7687e45"
     },
     {
       "song_id": "1963634342",
@@ -304,7 +310,8 @@
       "preview_file": "videos/night-of-bloom.mp4",
       "preview_poster": "videos/night-of-bloom.jpg",
       "preview_sha256": "fa086d44e74681cdaad0078768b9785340494f7466807b9a7e24a5816e0f51a7",
-      "display_name": "Night of Bloom (feat. nayuta) — Kirara Magic / Xomu / nayuta"
+      "display_name": "Night of Bloom (feat. nayuta) — Kirara Magic / Xomu / nayuta",
+      "preview_embed_url": "https://github.com/user-attachments/assets/4054134b-8caf-489e-8a8d-89d48285ba7e"
     }
   ]
 }

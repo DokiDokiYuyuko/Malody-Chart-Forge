@@ -2,7 +2,7 @@
 
 ## Codex playlist tasks and production delivery — 2026-10-15
 
-- Add six ready-to-import demo MCZs with both Expert and Master (twelve charts), artwork/audio, portable hashes and measured density. Provide a two-column gallery of six 30-second previews at ×3 scroll / 60 FPS with built-in hit-4 audio; distinguish chart-data renders from actual gameplay recording.
+- Add six ready-to-import demo MCZs with both Expert and Master (twelve charts), artwork/audio, portable hashes and measured density. Embed GitHub attachment players for online playback in both READMEs, with a two-column gallery of six 30-second previews at ×3 scroll / 60 FPS with built-in hit-4 audio; distinguish chart-data renders from actual gameplay recording.
 - Use original recording titles and credited performers in the demo tables, video gallery, thumbnail captions, rendered videos and media metadata.
 - Recommend using Codex with the published `malody-4k` Skill to arrange playlist tasks; keep the web studios focused on manual authoring, listening and candidate review.
 - Publish a reusable Advanced batch submitter with frozen manifests, durable intent/receipts, serial polling and recovery without automatic resubmission of uncertain or failed requests.
