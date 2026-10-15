@@ -3,13 +3,13 @@
 <div align="center">
   <img src="web/assets/startrail-mark.svg" width="88" alt="Startrail">
   <h1>STARTRAIL · MALODY CHART FORGE</h1>
-  <p><strong>从音乐到四轨：本地生成、分段编排、试听比较和 MCZ 导出。</strong><br>Local 4K generation, region planning, synchronized review and MCZ export.</p>
+  <p><strong>从歌单到四轨：用 Codex 安排自动制谱，本地生成，网页试听与精修。</strong><br>Let Codex arrange playlist tasks; generate locally, review and refine in the studio.</p>
   <p>
     <img src="https://img.shields.io/badge/Malody-classic%204K-54cfd2?style=for-the-badge" alt="Classic Malody 4K">
     <img src="https://img.shields.io/badge/inference-local-52c9a5?style=for-the-badge" alt="Local inference">
     <img src="https://img.shields.io/badge/platform-Windows%20desktop-5679d8?style=for-the-badge" alt="Windows desktop">
   </p>
-  <p><a href="#简体中文">简体中文</a> · <a href="#english">English</a> · <a href="#快速开始">快速开始</a> · <a href="CHANGELOG.md">Release notes</a> · <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1">v1 archive</a></p>
+  <p><a href="#简体中文">简体中文</a> · <a href="#english">English</a> · <a href="#快速开始">快速开始</a> · <a href="docs/codex-workflow.md">Codex 歌单任务</a> · <a href="CHANGELOG.md">Release notes</a> · <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1">v1 archive</a></p>
 </div>
 
 ![新版高级制谱台：区域、波形与四轨预览](docs/screenshots/readme-v2-advanced.png)
@@ -27,7 +27,25 @@
 
 Startrail 是面向 **Windows 电脑端、经典 Malody 4K** 的本地制谱工具。简易台适合整曲生成；高级台提供音轨准备、区域规划、逐区域重做、A/B 候选和成品组装。当前维护范围为电脑端。
 
+**多首或歌单制谱，更推荐让 Codex 使用本仓库的 Skill 安排自动任务。** 把网易云歌单、喜欢的音乐人、曲目数量和难度偏好交给 Codex，由它选曲、核验音源、通过现有本地服务提交任务并检查交付，省去逐首在前端设置和提交。网页适合试听试玩、编辑区域和比较候选；单曲也可继续手动生成。
+
 `main` 包含当前工作流；`v1` 保留此前 GitHub 版本。新主分支公开运行代码、必要模型配置、测试和使用说明。音乐、生成曲包、密钥、Cookie、实验数据和内部开发报告留在本机。
+
+### 推荐：让 Codex 根据歌单安排任务
+
+先按下方快速开始部署并启动服务，再在 Codex 中打开本项目，提交类似任务：
+
+```text
+先读取 skills/malody-4k/SKILL.md，复用本地已经运行的制谱服务。
+根据这个网易云歌单挑选 20 首：<歌单链接>，优先 <音乐人>，与已有成品去重。
+使用高级制谱流程，生成键盘 4K Expert / Master，目标 NPS 分别为 9–12 / 11–15。
+每首最多尝试 3 个候选，核对完整录音、封面和作者，保存断点与实际参数。
+完成后回读最终 MCZ，检查密度、局部负担和档位差，只交付选定成品。
+```
+
+数量、物量和重试预算按自己的偏好修改。网易云歌单确定选曲身份，完整音源需要逐首核验；拿不到可靠版本时报告待处理。仓库不自带已启用的 Codex 定时任务，网页也没有新增歌单按钮。
+
+详见 [Codex 歌单工作流、任务模板与批量提交](docs/codex-workflow.md)、[制谱 Skill](skills/malody-4k/SKILL.md) 和 [质量检查与 Malody V 导入](docs/chart-quality.md)。本地已有累计 **120 首**的批量运行案例；生成结束、导入文件回读和真人试玩分别记录。
 
 ### 新版功能
 
@@ -43,10 +61,14 @@ Startrail 是面向 **Windows 电脑端、经典 Malody 4K** 的本地制谱工�
 | 外观与署名 | 五套主题、可关闭的鼠标流星、谱师名字设置；署名传递到新谱面与导出包。 |
 | 可选 Agent 修谱 | 配置自己的修谱／听音 API，针对有限窗口提交证据与修订，比较后手动采用。 |
 
+本次更新还公开了可恢复的批量提交工具、显式成品清单导入、可选的多押微错位／单轨负担规则，以及默认清理中间文件的 [存储策略](docs/storage.md)。规则后处理与网页生成的应用范围见 [质量说明](docs/chart-quality.md)。
+
 ### 生成流水线
 
 ```mermaid
 flowchart TD
+    PL[歌单与音乐人偏好] --> CX[Codex + Skill：选曲、去重与音源核验]
+    CX --> A
     A[本地音乐 / Local audio] --> C[确认元数据与保留原曲]
     B[YouTube / B站下载] --> A
     C --> S[简易台：整曲工作流]
@@ -128,7 +150,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup_roformer.ps1
 
 </details>
 
-### 两种制谱方式
+### 网页手动制谱
 
 **简易台：** 先从本地选择音乐，核对曲名、音乐人和谱师，选择排键与难度。V32 每档填写 NPS 范围；生成后通过难度标签切换预览，用试听、Autoplay 或 DFJK 试玩检查结果，再下载 MCZ。单档迭代会保留新旧版本；实际是否复用模型缓存或再次推理取决于任务冻结的生成路线。
 
@@ -154,10 +176,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup_roformer.ps1
 | `malody_studio/`, `web/`, `tools/` | 应用、桌面网页和运行工具 |
 | `models/`, `runtime/`, `vendor/` | 公开配置、独立环境和固定上游源码；权重另下载 |
 | `data/calibrations/`, `util/nps_star_mapping/` | 运行必需的汇总校准曲线与查询代码，包含版本和哈希 |
+| `skills/malody-4k/`, `docs/` | 可公开的 Codex 制谱约束、服务接口和使用文档 |
 | `data/音乐/`, `uploads/` | 本地音源，Git 忽略 |
-| `outputs/`, `cache/`, `logs/`, `private/` | 曲包、候选、缓存、日志和私密配置，Git 忽略 |
+| `work/`, `outputs/`, `cache/`, `logs/`, `private/` | 批次状态、曲包、候选、缓存、日志和私密配置，Git 忽略 |
 
 本地推理不发送音频到云端。在线搜索／下载会访问对应平台；可选 Agent 仅在用户启动评审后向所配置服务发送窗口证据，音频片段可单独开关。持久 API 密钥可使用 Windows 用户加密保存。
+
+默认 `retain_debug_artifacts=false`：保留原曲、不可变谱面、采用版本、成品包、实际参数与摘要，用完清理临时 WAV 和详细诊断。单曲异常时创建独立调试重试；不会因此批量删除历史成果。详见 [文件保留与排查](docs/storage.md)。Codex 接收的任务内容和工具结果按其配置处理，本地制谱推理不代表整个 Codex 工作流离线运行。
 
 NPS 曲线从 `1 ≤ SR < 7` 的样本拟合，**SR ≥ 7 完全来自低星趋势外推**。曲线描述统计关系，不保证模型输出落在目标范围。未达到密度目标应报告不足，不能加音符伪装达标。未解决或回滚的对齐组仍需要人工核验。
 
@@ -188,10 +213,21 @@ node --test tests/*.cjs tests/*.js
 
 **Startrail · Malody Chart Forge** is a local authoring tool for **classic Malody 4K on Windows desktop**. The Simple studio provides a whole-song workflow. The Advanced studio adds full-length source preparation, region planning, independent regeneration, A/B candidates and package assembly.
 
+**For multiple songs or playlists, we recommend asking Codex to use the repository's Skill to arrange automatic tasks.** Give it playlist links, artist preferences, song count and difficulty goals. Codex can verify recordings, prepare sources, submit the existing local queue and check deliveries. The web studios support listening, practice, region editing and A/B review, as well as manual single-song generation.
+
 `main` contains the current workflow. [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1) preserves the previous GitHub version. The public tree contains application code, required configuration, tests and user documentation. Personal music, generated packages, credentials, research outputs and internal development reports stay local.
+
+### Recommended: playlist tasks with Codex
+
+Install and start the local service first. Open this project in Codex and ask it to read `skills/malody-4k/SKILL.md`, then select songs from your playlist, verify full recordings and metadata, generate your requested difficulties within an attempt budget, and read back selected final MCZs. The Chinese example above is a configurable task, not a fixed difficulty policy.
+
+See the [workflow and task template](docs/codex-workflow.md), [Skill](skills/malody-4k/SKILL.md), [service API reference](skills/malody-4k/references/service-api.md) and [quality/import guide](docs/chart-quality.md). NetEase playlist identity does not guarantee a downloadable full recording. The repository includes neither an enabled Codex schedule nor a web playlist button. A local 120-song production case is documented separately from human playtesting.
 
 ### What changed
 
+- **Codex playlist workflow:** published Skill, reusable task instructions, durable serial submission and explicit delivery-manifest import into a user-selected Malody V directory.
+- **Optional delivery checks:** conservative micro-chord alignment, lane-comfort rules and model-note reuse guards; their scope is documented rather than assumed for every web result.
+- **Production storage:** clean consumed intermediate audio and verbose diagnostics by default; preserve originals, immutable charts, actual parameters and delivery history, with per-song debug opt-in.
 - **Separate music downloads:** paginated YouTube search, Bilibili link resolution, metadata confirmation and original-format local audio. Downloading does not start analysis or chart generation.
 - **Independent V32 targets:** each difficulty has an NPS minimum and maximum. Submissions freeze BPM buckets and the versioned NPS-to-SR calibration; difficulties and condition spans run independently. Historical retries retain their saved route.
 - **Advanced region workflow:** import → Start processing → audition and edit suggested regions → Confirm plan and generate → review, redo or export. Adjust granularity, boundaries and intensity without repeating unchanged audio analysis.
@@ -244,6 +280,8 @@ Deliveries live under `outputs/曲包/<title>/<timestamp-short-id>/` with MCZ, r
 Only exact multichannel zero PCM at the end, lasting at least one second, is trimmed by default. Reverb, quiet sounds, intros and interior silence remain. Original music is retained and tail preservation can be selected.
 
 Local inference does not upload audio. Online search/download accesses the selected services. Optional Agent review sends window evidence only when requested; audio excerpts have a separate switch, and persistent API credentials can use Windows user encryption.
+
+Production defaults to `retain_debug_artifacts=false`; see [storage and diagnostics](docs/storage.md). Consumed temporary audio and verbose diagnostics are cleaned while originals, immutable versions and concise records remain. Information supplied to Codex follows its configuration; local chart inference does not make the entire Codex workflow offline.
 
 The calibration is fitted only from **`1 ≤ SR < 7`** samples. **SR ≥ 7 is extrapolated exclusively from lower-star trends.** This statistical mapping cannot guarantee generated NPS or official Malody difficulty. Underfilled targets and unresolved alignment groups remain outstanding review items. Unit tests and MCZ structure checks do not establish musical accuracy, actual game import or human playability. Listen, import and play-test before sharing.
 
