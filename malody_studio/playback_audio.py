@@ -53,9 +53,11 @@ def audition_file(source, project_directory):
     info = source.stat()
     key = hashlib.sha256(f'{VERSION}:{source}:{info.st_size}:{info.st_mtime_ns}'.encode()).hexdigest()
     cache = directory / 'preview-audio'
+    from .artifact_retention import project_debug
+    debug=project_debug(directory)
     with _lock:
         metadata = cache / (key + '.json')
-        target = cache / (key + '.wav')
+        target = cache / (key + ('.wav' if debug else '.transient-'+uuid.uuid4().hex+'.wav'))
         if metadata.exists():
             record = json.loads(metadata.read_text(encoding='utf-8'))
             if record['gain'] == 1.:

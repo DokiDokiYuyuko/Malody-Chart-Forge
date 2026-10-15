@@ -12,6 +12,7 @@ function Test-CurrentServer([string]$candidateUrl) {
         $health = Invoke-RestMethod "$candidateUrl/api/health" -TimeoutSec 3
         if ($health.api_version -lt 2 -or $health.advanced_workflow_version -lt 12 -or $health.workflow_repair_version -lt 2 -or $health.music_workflow_version -lt 2 -or $health.gpu_resident_version -lt 1 -or $health.chart_quality_version -lt 4 -or $health.density_validation_version -lt 1 -or $health.music_assets_version -lt 1 -or $health.library_version -lt 3) { return $false }
         if ($health.nps_star_direct_version -lt 1) { return $false }
+        if ($health.artifact_retention_version -lt 1) { return $false }
         $schema = Invoke-RestMethod "$candidateUrl/openapi.json" -TimeoutSec 3
         $paths = $schema.paths.PSObject.Properties.Name
         return ($paths -contains '/api/advanced/projects/{pid}/separation-trials' -and

@@ -60,7 +60,7 @@ def timing_map(raw,source,adapter=None):
     if fit.get('eligible') and aligned:
         # Project the measured downbeat indices through the multi-beat fit.
         down=[int(round(fit['phase_sample']+fit['indices'][index]*fit['period_samples'])) for index in aligned]
-        down=[x for x in down if 0<=x<stop]
+        down=sorted(set(x for x in down if 0<=x<stop))
     phase=down[0] if meter is not None and down else None
     beat_eligible=len(beats)>=8 and fit.get('inlier_fraction',0)>=.9
     reasons=list(raw.get('reasons',[]))
@@ -94,6 +94,10 @@ def timing_map(raw,source,adapter=None):
         if pieces and max(continuity,default=0)<=25:
             points=pieces;v32=True;beat_eligible=True
             down=sorted(set(x for x in down if 0<=x<stop));phase=points[0]['sample']
+        else:
+            # Rejected local grids are not timing evidence. Keep only the
+            # detector's observed downbeats; projected anchors were provisional.
+            down=observed_down[:]
     return sealed({'schema':TIMING_SCHEMA,'source':copy.deepcopy(source),'beat_samples':beats,'downbeat_samples':down,'observed_downbeat_samples':observed_down,
         'meter':meter,'phase_sample':phase,'tempo_points':points,'fit':fit,
         'local_fits':local,'uncertain':not v32,

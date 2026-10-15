@@ -386,9 +386,48 @@ def run_queued_job(job_id):
                 jobs[job_id].update(status='failed', message='任务准备失败', error=str(exc))
                 store(jobs[job_id])
     finally:
+        try:
+            finalize_storage(job_id, locals().get('source'))
+        except Exception as exc:
+            with lock:
+                if job_id in jobs:
+                    jobs[job_id]['storage_warning']='中间文件清理未完成：'+str(exc)
+                    store(jobs[job_id])
         with lock:
             scheduler_active.discard(job_id)
         dispatch_next()
+
+def finalize_storage(job_id, source=None):
+    from .artifact_retention import cleanup, retain_debug, prune_project
+    directory=ROOT/'outputs'/job_id
+    with lock:
+        job=jobs.get(job_id)
+        if not job or job.get('status') not in ('completed','failed','interrupted','cancelled'):return
+        options=copy.deepcopy(job.get('options',{}))
+    debug=retain_debug(options)
+    keep=[] if source and Path(source).is_file() and not Path(source).resolve().is_relative_to(directory.resolve()) else [directory/'source.wav']
+    summary=cleanup(directory,debug=debug,keep_audio=keep)
+    snapshot=options.get('_advanced') or {}
+    pid=snapshot.get('project',{}).get('id')
+    if pid and snapshot.get('task_type','generation')=='generation':
+        from .advanced_api import store as project_store
+        # Follow the project's normal lock order: project first, then queue.
+        with project_store.lock:
+            with lock:
+                active=any(other['id']!=job_id and other.get('status') in ('queued','paused','running')
+                           and other.get('options',{}).get('_advanced',{}).get('project',{}).get('id')==pid
+                           for other in jobs.values())
+                if not active:
+                    shared=prune_project(project_store.directory(pid),ROOT,debug=debug,prune_stems=True)
+                    summary['project']=shared
+    with lock:
+        job=jobs[job_id]
+        job['artifact_retention']=summary
+        if summary.get('errors') or summary.get('project',{}).get('errors'):
+            job['storage_warning']='部分中间文件被占用，未能清理；详情见 artifact_retention'
+        store(job)
+        (directory/'storage-retention.json').write_text(json.dumps(summary,ensure_ascii=False),encoding='utf-8')
+
 
 def enqueue_job(options, source_ref):
     return enqueue_jobs([(options, source_ref)])[0]
@@ -449,7 +488,7 @@ def settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine='mu
              v32_difficulty=8, v32_temperature=.9, v32_top_p=.9,
              v32_column_temperature=.8, v32_cfg_scale=1, v32_year=2024,
              v32_descriptors='', v32_negative_descriptors='', patterns=None, dynamic_enabled=False, tail_trim_enabled=True,
-             nps_ranges='', parallel_streams=0, creator=DEFAULT_CHART_CREATOR):
+             nps_ranges='', parallel_streams=0, creator=DEFAULT_CHART_CREATOR, retain_debug_artifacts=False):
     try:
         creator = validate_creator(creator)
     except ValueError as exc:
@@ -561,10 +600,12 @@ def settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine='mu
         raise HTTPException(400, str(exc))
     if not isinstance(dynamic_enabled,bool):raise HTTPException(400,'段落适配开关无效')
     if not isinstance(tail_trim_enabled,bool):raise HTTPException(400,'裁尾开关无效')
+    if type(retain_debug_artifacts) is not bool:raise HTTPException(400,'保留调试文件须为布尔值')
     return {'tail_trim_enabled':tail_trim_enabled,'dynamic_enabled':dynamic_enabled,'dynamic_strength':1.,'title': title, 'artist': artist or 'Unknown', 'difficulties': selected,
             'patterns': selected_patterns, 'artwork_video_id': artwork_id,
             'ln_ratio': ln_ratio, 'steps': steps, 'seed': seed, 'bpm': bpm, 'engine': engine,
             'nps_ranges': normalized_nps_ranges, 'parallel_streams': parallel_streams, 'creator': creator,
+            'retain_debug_artifacts':retain_debug_artifacts,
             'difficulty_rules': normalized_rules, 'pattern': pattern, 'pattern_strength': int(pattern_strength),
             'mug_difficulty': float(mug_difficulty), 'mug_style': mug_style,
             'mug_guidance': float(mug_guidance), 'mug_eta': float(mug_eta),
@@ -622,7 +663,7 @@ def health():
         '缺少 V32 独立 Python 环境，请运行“一键配置环境.bat”并选择 V32。' if not v32_python_ready else
         '缺少 V32 模型权重或部署校验文件，请运行“一键配置环境.bat”并选择 V32。')
     return {
-        'api_version': 2,
+        'api_version': 2, 'artifact_retention_version':1,
         'nps_star_direct_version':1,'nps_star_mapping_id':'20261006-v4',
         'advanced_workflow_version': 13,'music_workflow_version':2,'workflow_repair_version':3,
         'model_head_serialization':'mania-column-hold-pairing-v1',
@@ -900,13 +941,14 @@ async def upload(file: UploadFile = File(...), title: str = Form(...), artist: s
                  v32_cfg_scale: float = Form(1), v32_year: int = Form(2024),
                  v32_descriptors: str = Form(''), v32_negative_descriptors: str = Form(''),
                  patterns: str = Form(''), dynamic_enabled: bool = Form(True), tail_trim_enabled: bool = Form(True),
-                 nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form)):
+                 nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form),
+                 retain_debug_artifacts: bool = Form(False)):
     options = settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine, artwork_url,
                        difficulty_rules, pattern, pattern_strength, mug_difficulty, mug_style,
                        mug_guidance, mug_eta, v32_difficulty, v32_temperature, v32_top_p,
                        v32_column_temperature, v32_cfg_scale, v32_year,
                        v32_descriptors, v32_negative_descriptors, patterns, dynamic_enabled, tail_trim_enabled,
-                       nps_ranges, parallel_streams, creator)
+                       nps_ranges, parallel_streams, creator, retain_debug_artifacts)
     extension = Path(file.filename or '').suffix.lower()
     if extension not in ('.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aac', '.opus', '.webm'):
         raise HTTPException(400, '请选择 MP3、WAV、FLAC、M4A、OGG、AAC 或 OPUS 音频')
@@ -949,7 +991,8 @@ def reference(difficulties: str = Form('["easy","normal","hard"]'), ln_ratio: fl
               v32_cfg_scale: float = Form(1), v32_year: int = Form(2024),
               v32_descriptors: str = Form(''), v32_negative_descriptors: str = Form(''),
               patterns: str = Form(''), dynamic_enabled: bool = Form(True), tail_trim_enabled: bool = Form(True),
-              nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form)):
+              nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form),
+              retain_debug_artifacts: bool = Form(False)):
     source = ROOT / 'uploads' / 'reference-sirius.m4a'
     if not source.is_file():
         raise HTTPException(404, '参考音轨尚未准备完成')
@@ -960,7 +1003,8 @@ def reference(difficulties: str = Form('["easy","normal","hard"]'), ln_ratio: fl
                        v32_column_temperature=v32_column_temperature, v32_cfg_scale=v32_cfg_scale,
                        v32_year=v32_year, v32_descriptors=v32_descriptors,
                        v32_negative_descriptors=v32_negative_descriptors, patterns=patterns, dynamic_enabled=dynamic_enabled, tail_trim_enabled=tail_trim_enabled,
-                       nps_ranges=nps_ranges, parallel_streams=parallel_streams, creator=creator)
+                       nps_ranges=nps_ranges, parallel_streams=parallel_streams, creator=creator,
+                       retain_debug_artifacts=retain_debug_artifacts)
     ensure_engine(options)
     options['source'] = 'https://www.youtube.com/watch?v=UKZt1vq8bKI'
     options['artwork_video_id'] = 'UKZt1vq8bKI'
@@ -1035,7 +1079,7 @@ def retry_advanced_job(original):
                                     or not isinstance(frozen_source.get('source_id'),str)
                                     or not (frozen_source.get('pcm_sha') or frozen_source.get('file_sha256'))):
                                 raise ValueError('连续推理来源身份不完整')
-                            current_source=resolve_source(store,pid,frozen_source['source_id'])
+                            current_source=resolve_source(store,pid,frozen_source['source_id'],allow_pruned=True)
                             if any(key in frozen_source and frozen_source.get(key)!=current_source.get(key)
                                    for key in identity_fields):
                                 raise ValueError('连续推理来源已变化，请从当前来源重新生成')
@@ -1084,7 +1128,7 @@ def retry_advanced_job(original):
 
 
 @app.post('/api/jobs/{job_id}/regenerate')
-def regenerate_job(job_id: str):
+def regenerate_job(job_id: str, payload: dict = Body(default={})):
     if not re.fullmatch(r'[0-9a-f]{32}', job_id):
         raise HTTPException(404, '曲包记录不存在')
     with lock:
@@ -1092,7 +1136,13 @@ def regenerate_job(job_id: str):
     state = original.get('status')
     if state not in ('completed', 'failed', 'interrupted'):
         raise HTTPException(409, '只有已完成、失败或中断的任务可以重试')
-    options = dict(original.get('options', {}))
+    options = copy.deepcopy(original.get('options', {}))
+    if isinstance(payload,dict) and 'retain_debug_artifacts' in payload:
+        if type(payload['retain_debug_artifacts']) is not bool:raise HTTPException(400,'保留调试文件须为布尔值')
+        options['retain_debug_artifacts']=payload['retain_debug_artifacts']
+        if options.get('_advanced'):
+            options['_advanced'].setdefault('settings',{})['retain_debug_artifacts']=payload['retain_debug_artifacts']
+    original['options']=options
     if options.get('_advanced'):
         return retry_advanced_job(original)
     from .quality_workflow import candidate_contract
@@ -1101,7 +1151,13 @@ def regenerate_job(job_id: str):
     options['candidate_policy']=candidate_contract()
     options.setdefault('tail_trim_enabled',True)
     source_job_id = None
-    if state == 'completed':
+    try:
+        original_source=resolve_source_ref(original) if original.get('source_ref') else None
+    except (OSError,ValueError):original_source=None
+    if original_source is not None:
+        source=original_source
+        options.pop('_reuse_source_job_id',None)
+    elif state == 'completed':
         source = job_audio_path(job_id)
         source_job_id = job_id
     else:
@@ -1207,6 +1263,24 @@ def _save_report_and_package(job_id, job, charts):
 
 @app.post('/api/jobs/{job_id}/difficulties/{key}/regenerate')
 def regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={} )):
+    directory=ROOT/'outputs'/job_id
+    with lock:job=copy.deepcopy(get_job(job_id))
+    # The compact mother cache remains; PCM and sound evidence can be rebuilt on demand.
+    needs_original=False
+    for path in [directory/'generation-cache.json',*(directory/'chart-cache').glob('*/generation-cache.json')]:
+        if path.is_file():
+            try:needs_original=needs_original or bool(json.loads(path.read_text(encoding='utf-8')).get('simple_generation_policy'))
+            except (OSError,ValueError):pass
+    if needs_original and not (directory/'source.wav').is_file():
+        from .artifact_retention import working_original, retain_debug
+        try:source=resolve_source_ref(job)
+        except ValueError:source=job_audio_path(job_id)
+        with working_original(directory,source,debug=retain_debug(job.get('options',{}))):
+            return _regenerate_difficulty(job_id,key,payload)
+    return _regenerate_difficulty(job_id,key,payload)
+
+
+def _regenerate_difficulty(job_id: str, key: str, payload: dict = Body(default={} )):
     from .charts import Note, serialize, validate_chart, chart_stats
     from .difficulty import calibrate, PRESETS as DIFFICULTY_PRESETS, PATTERN_LABELS
     from .naming import chart_stem, model_display
@@ -1676,20 +1750,23 @@ def artifact(job_id: str, filename: str, request: Request):
 
 def audio_response(path, range_header=None):
     # OGG players read the tail to determine duration and seek to a page boundary.
+    from .artifact_retention import remove_ephemeral, ephemeral_audio
+    from starlette.background import BackgroundTask
+    background=BackgroundTask(remove_ephemeral,path) if ephemeral_audio(path) else None
     size = path.stat().st_size
     start, end, status = 0, size - 1, 200
     headers = {'Accept-Ranges': 'bytes'}
     if range_header:
         match = re.fullmatch(r'bytes=(\d*)-(\d*)', range_header)
         if not match or not any(match.groups()):
-            return Response(status_code=416, headers={'Content-Range': f'bytes */{size}'})
+            return Response(status_code=416, headers={'Content-Range': f'bytes */{size}'},background=background)
         first, last = match.groups()
         if first:
             start, end = int(first), min(int(last), size - 1) if last else size - 1
         else:
             start = max(0, size - int(last))
         if start >= size or end < start:
-            return Response(status_code=416, headers={'Content-Range': f'bytes */{size}'})
+            return Response(status_code=416, headers={'Content-Range': f'bytes */{size}'},background=background)
         status = 206
         headers['Content-Range'] = f'bytes {start}-{end}/{size}'
     headers['Content-Length'] = str(end - start + 1)
@@ -1703,7 +1780,7 @@ def audio_response(path, range_header=None):
                     break
                 remaining -= len(chunk)
                 yield chunk
-    return StreamingResponse(stream(), status_code=status, media_type='audio/wav' if path.suffix.lower()=='.wav' else 'audio/ogg', headers=headers)
+    return StreamingResponse(stream(), status_code=status, media_type='audio/wav' if path.suffix.lower()=='.wav' else 'audio/ogg', headers=headers,background=background)
 
 @app.get('/')
 def home():
@@ -1772,6 +1849,7 @@ def create_batch(payload: dict = Body(...)):
             difficulty_rules=json.dumps(rules), pattern=str(snapshot.get('pattern', 'balanced')),
             nps_ranges=ranges, parallel_streams=snapshot.get('parallel_streams', 0),
             creator=snapshot.get('creator', DEFAULT_CHART_CREATOR),
+            retain_debug_artifacts=snapshot.get('retain_debug_artifacts',False),
             patterns=snapshot.get('patterns'), dynamic_enabled=snapshot.get('dynamic_enabled',True), tail_trim_enabled=snapshot.get('tail_trim_enabled',True),
             pattern_strength=number('pattern_strength', 20, int),
             mug_difficulty=number('mug_difficulty', 8), mug_style=str(snapshot.get('mug_style', 'ranked')),
@@ -1856,7 +1934,8 @@ def music_generate(video_id: str, title: str = Form(...), artist: str = Form('')
                    v32_cfg_scale: float = Form(1), v32_year: int = Form(2024),
                    v32_descriptors: str = Form(''), v32_negative_descriptors: str = Form(''),
                    patterns: str = Form(''), dynamic_enabled: bool = Form(True), tail_trim_enabled: bool = Form(True),
-                   nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form)):
+                   nps_ranges: str = Form(''), parallel_streams: int = Form(0), creator: str = Depends(creator_form),
+                   retain_debug_artifacts: bool = Form(False)):
     from .music import ready_audio
     options = settings(title, artist, difficulties, ln_ratio, steps, seed, bpm, engine,
                        difficulty_rules=difficulty_rules, pattern=pattern, pattern_strength=pattern_strength,
@@ -1865,7 +1944,8 @@ def music_generate(video_id: str, title: str = Form(...), artist: str = Form('')
                        v32_column_temperature=v32_column_temperature, v32_cfg_scale=v32_cfg_scale,
                        v32_year=v32_year, v32_descriptors=v32_descriptors,
                        v32_negative_descriptors=v32_negative_descriptors, patterns=patterns, dynamic_enabled=dynamic_enabled, tail_trim_enabled=tail_trim_enabled,
-                       nps_ranges=nps_ranges, parallel_streams=parallel_streams, creator=creator)
+                       nps_ranges=nps_ranges, parallel_streams=parallel_streams, creator=creator,
+                       retain_debug_artifacts=retain_debug_artifacts)
     ensure_engine(options)
     try:
         source, track = ready_audio(video_id)

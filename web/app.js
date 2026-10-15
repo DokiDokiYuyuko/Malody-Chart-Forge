@@ -49,6 +49,12 @@ $('mode-recommended').onclick = () => setSettingsMode(false);
 $('mode-custom').onclick = () => setSettingsMode(true);
 $('reset-settings').onclick = () => { const currentEngine=$('engine').value; applyPreferences(preferenceDefaults); if ($('engine').selectedOptions[0]?.disabled) $('engine').value=currentEngine; syncSettingsDisplays(); previewSpeed=Number($('preview-speed').value); syncPreviewSpeedControl(); setSettingsMode(false,false); updateDifficultyRuleVisibility(); updateEngine(); syncPatternSelection(false); persistPreferences(); drawChart(); };
 const audio = $('audio');
+const retentionLabel=document.createElement('label');retentionLabel.className='aw-check';
+const retentionInput=document.createElement('input');retentionInput.id='retain-debug-artifacts';retentionInput.type='checkbox';
+retentionLabel.append(retentionInput,document.createTextNode('保留调试文件（仅排查单曲时开启）'));
+const retentionHint=document.createElement('p');retentionHint.className='local-note';
+retentionHint.textContent='默认只保留原曲、曲包、谱面版本、参数和结果摘要。中间 WAV 与详细诊断用完自动清理；开启后保留完整现场，会占用更多空间。';
+$('tail-trim-enabled').closest('label').after(retentionLabel,retentionHint);
 const failurePanel=document.createElement('section');failurePanel.id='failure-quality';failurePanel.className='failure-quality';failurePanel.hidden=true;$('job-error').after(failurePanel);
 let mascotFrame = -1;
 const mascotSprite = new Image();
@@ -247,6 +253,7 @@ function buildGenerationFormData(includeSource=false) {
     (rules[key] ||= {})[input.dataset.rule] = Number(input.value);
   }
   data.append('tail_trim_enabled',String($('tail-trim-enabled').checked));data.append('dynamic_enabled',String($('dynamic-enabled').checked));data.append('difficulty_rules', JSON.stringify(rules));data.append('nps_ranges',JSON.stringify(npsRangeValues()));
+  data.append('retain_debug_artifacts',String($('retain-debug-artifacts').checked));
   data.append('patterns', JSON.stringify(selectedPatterns()));
   data.append('difficulties', JSON.stringify([...document.querySelectorAll('input[name=difficulty]:checked')].map(x => x.value)));
   data.append('ln_ratio', $('ln-ratio').value);
@@ -258,7 +265,7 @@ function buildGenerationFormData(includeSource=false) {
 function generationSettingsSnapshot() {
   const snapshot = Object.fromEntries(buildGenerationFormData(false).entries());
   snapshot.difficulties = JSON.parse(snapshot.difficulties);
-  snapshot.tail_trim_enabled=snapshot.tail_trim_enabled==='true';snapshot.dynamic_enabled=snapshot.dynamic_enabled==='true';snapshot.patterns = JSON.parse(snapshot.patterns);
+  snapshot.tail_trim_enabled=snapshot.tail_trim_enabled==='true';snapshot.dynamic_enabled=snapshot.dynamic_enabled==='true';snapshot.retain_debug_artifacts=snapshot.retain_debug_artifacts==='true';snapshot.patterns = JSON.parse(snapshot.patterns);
   snapshot.difficulty_rules = JSON.parse(snapshot.difficulty_rules);snapshot.nps_ranges=JSON.parse(snapshot.nps_ranges);
   delete snapshot.title; delete snapshot.artist;
   return snapshot;

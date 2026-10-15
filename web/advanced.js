@@ -429,6 +429,9 @@
     generationNumber('长条比例','ln_ratio',generationDraft.ln_ratio,0,.8,.05);generationNumber('排键倾向','pattern_strength',generationDraft.pattern_strength,0,100);
     for(const [title,key,min,max,step]of [['V32 温度','v32_temperature',.1,2,.05],['Top-p','v32_top_p',.1,1,.05],['轨道随机性','v32_column_temperature',.1,2,.05],['CFG','v32_cfg_scale',.5,5,.1],['MuG 引导强度','mug_guidance',0,10,.1]])generationNumber(title,key,generationDraft[key],min,max,step);
     const dynamic=node('input');dynamic.type='checkbox';dynamic.checked=generationDraft.dynamic_enabled;dynamic.onchange=()=>{generationDraft.dynamic_enabled=dynamic.checked;scheduleScheme();};const dynamicLabel=node('label',null,'aw-check');dynamicLabel.append(dynamic,document.createTextNode('按 BPM 桶调整各段难度'));host.append(dynamicLabel);
+    const keepDebug=node('input');keepDebug.id='aw-retain-debug-artifacts';keepDebug.type='checkbox';keepDebug.checked=generationDraft.retain_debug_artifacts===true;keepDebug.onchange=()=>{generationDraft.retain_debug_artifacts=keepDebug.checked;};
+    const keepDebugLabel=node('label',null,'aw-check');keepDebugLabel.append(keepDebug,document.createTextNode('保留调试文件（仅排查单曲时开启）'));host.append(keepDebugLabel);
+    host.append(node('p','默认保留原曲、曲包、谱面版本、实际参数和结果摘要。生成结束后清理中间 WAV 和详细诊断；人声/伴奏用完清理，重跑时从原曲重建。开启调试会保留完整现场，占用更多空间。','aw-hint'));
     generationNumber('BPM 桶数量上限','bpm_bucket_count',generationDraft.bpm_bucket_count,1,9,1);generationNumber('最大密度浮动（0.2＝20%）','bpm_bucket_range',generationDraft.bpm_bucket_range,0,.25,.05);generationNumber('难度浮动强度','dynamic_strength',generationDraft.dynamic_strength??1,0,1,.1);
     for(const key of defaults.difficulties){
       const detail=node('details');detail.append(node('summary',key+' 难度参数'));host.append(detail);

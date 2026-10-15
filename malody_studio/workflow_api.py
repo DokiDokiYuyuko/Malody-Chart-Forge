@@ -17,11 +17,12 @@ def source_path(pid, source_id='original'):
     store = _store(); directory = store.directory(pid); store.load(pid)
     def local(path):
         if not path.resolve().is_relative_to(directory.resolve()):raise ValueError('音源路径越过项目目录')
-        if not path.is_file():raise ValueError('音频来源不存在，请先完成分离或拼接')
+        if not path.is_file():raise ValueError('中间音轨已清理，请从原曲重新分离；生成任务会按保存参数自动重建')
         return path
     if source_id == 'original':return local(directory/'source.wav')
     if source_id.startswith('assembly:'):
-        return local(directory/'assemblies'/identifier(source_id.split(':',1)[1])/'assembled.wav')
+        assembly=directory/'assemblies'/identifier(source_id.split(':',1)[1])
+        return local(assembly/'assembled.wav' if (assembly/'assembled.wav').is_file() else assembly/'audio.ogg')
     for manifest in (directory/'stems').glob('**/manifest.json'):
         data = read(manifest)
         for stem in data.get('stems',[]):

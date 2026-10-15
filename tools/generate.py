@@ -19,10 +19,13 @@ def main():
     parser.add_argument('--ln-ratio', type=float, default=.15)
     parser.add_argument('--bpm', type=float)
     parser.add_argument('--engine', choices=['mug', 'v32'], default='mug')
+    parser.add_argument('--retain-debug-artifacts', action='store_true',
+                        help='保留中间音频和完整诊断，供单曲重跑检查；默认用完清理')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     options = {'difficulties': json.dumps(args.difficulties), 'steps': args.steps,
-               'seed': args.seed, 'ln_ratio': args.ln_ratio, 'engine': args.engine, 'artwork_url': args.artwork_url}
+               'seed': args.seed, 'ln_ratio': args.ln_ratio, 'engine': args.engine, 'artwork_url': args.artwork_url,
+               'retain_debug_artifacts':args.retain_debug_artifacts}
     if args.bpm is not None:
         options['bpm'] = args.bpm
     with httpx.Client(base_url='http://127.0.0.1:8765', timeout=60) as client:

@@ -16,6 +16,8 @@ def present(manifest):
     detail = (f"重叠窗口 {settings.get('overlap_count', 4)} 次" if model == 'melband_roformer_kim'
               else f"重叠 {settings.get('overlap', .25):.0%} · 平移 {settings.get('shifts', 1)} 次")
     result['summary'] = f"{model} · {detail} · 全曲 {result['frame_count'] / SR:.2f} 秒"
+    if result.get('storage',{}).get('audio_pruned'):
+        result['summary'] += ' · 中间音轨已清理，生成时会从原曲重建；试听请重新分离'
     return result
 
 

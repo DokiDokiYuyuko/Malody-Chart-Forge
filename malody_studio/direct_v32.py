@@ -65,6 +65,7 @@ def silent_stem_request(role, message, request, full, rate, cache):
 
 
 def reusable_cache(snapshot, requests, actual_sha):
+    if snapshot.get('settings',{}).get('retain_debug_artifacts'):return None
     parent = snapshot.get('retry_of','')
     if len(parent) != 32 or any(c not in '0123456789abcdef' for c in parent):
         return None

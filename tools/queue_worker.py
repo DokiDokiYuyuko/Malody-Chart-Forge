@@ -36,6 +36,8 @@ def progress(message,percent):
     write_result(progress_path,{'message':message,'progress':round(float(percent),1)},optional=True)
 
 try:
+    from malody_studio.artifact_retention import restore_inputs
+    restore_inputs(ROOT, request['options'], directory, progress)
     from malody_studio.workflow_log import trace_job, stage, file_identity
     advanced = request['options'].get('_advanced') or {}
     task_type = advanced.get('task_type', 'generation')

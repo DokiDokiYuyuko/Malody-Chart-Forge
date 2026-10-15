@@ -22,6 +22,7 @@ def materialize_stems(project_directory, manifest):
         if (destination / row['file']).resolve().parent != destination.resolve():raise ValueError('分离声部文件路径无效')
     destination.mkdir(parents=True, exist_ok=True)
     local = copy.deepcopy(manifest)
+    local.pop('storage', None)
     if (destination / 'manifest.json').is_file():
         previous = read(destination / 'manifest.json')
         for key in ('created','name'):
@@ -47,8 +48,8 @@ def _seed(base, role, pcm_sha):
 
 def _raw_key(settings, descriptor, segment, variant, plan=None, direct_v32_policy=None):
     # Fusion/section tuning never invalidates the immutable model component.
-    excluded=(('difficulty_rules','source_mode','separation_preset','fusion_mode','fusion_primary') if direct_v32_policy
-              else ('difficulty_rules','source_mode','separation_preset','nps_ranges','fusion_mode','fusion_primary'))
+    excluded=(('retain_debug_artifacts','difficulty_rules','source_mode','separation_preset','fusion_mode','fusion_primary') if direct_v32_policy
+              else ('retain_debug_artifacts','difficulty_rules','source_mode','separation_preset','nps_ranges','fusion_mode','fusion_primary'))
     effective = {k: v for k, v in settings.items() if k not in excluded}
     inference_plan = [{'core': section.get('core'), 'conditions': {
         key: {'model_condition': item.get('model_condition'), 'effective_boost': item.get('effective_boost')}
@@ -389,7 +390,7 @@ def run(source, directory, options, progress):
         for variant in snapshot['variants']:
             key = _raw_key(raw_settings, descriptor, segment, variant['key'], plan,direct_policy if direct_mode else None)
             previous=None
-            if not direct_mode:
+            if not direct_mode and not settings.get('retain_debug_artifacts'):
                 previous=next((row for row in snapshot.get('reusable_raw_revisions',[]) if row['variant']==variant['key'] and row['range']==bounds
                                and row.get('provenance',{}).get('source_id')==descriptor['source_id']
                                and row.get('provenance',{}).get('pcm_sha')==descriptor['pcm_sha']),None)
@@ -397,7 +398,7 @@ def run(source, directory, options, progress):
             if previous:
                 reused[variant['key']] = previous
             else:
-                checkpoint = _checkpoint(key) if not direct_mode else None
+                checkpoint = _checkpoint(key) if not direct_mode and not settings.get('retain_debug_artifacts') else None
                 if checkpoint:
                     reused[variant['key']] = checkpoint
                     # A recovered model stage may not have reached server commit.

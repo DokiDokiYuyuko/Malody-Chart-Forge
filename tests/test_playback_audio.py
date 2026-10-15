@@ -19,6 +19,8 @@ def test_audition_rms_metadata_matches_uniform_peak_gain_without_changing_source
 
 
 def test_peak_safe_copy_preserves_channels_frames_spectrum_and_raw_source(tmp_path):
+    import json
+    (tmp_path/'project.json').write_text(json.dumps({'settings':{'retain_debug_artifacts':True}}))
     phase=np.arange(44100)/44100
     data=np.column_stack((1.3*np.sin(2*np.pi*440*phase),1.1*np.sin(2*np.pi*7800*phase))).astype(np.float32)
     source=tmp_path/'source.wav';sf.write(source,data,44100,subtype='FLOAT')

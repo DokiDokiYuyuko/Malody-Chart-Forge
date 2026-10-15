@@ -76,7 +76,7 @@ def defaults():
     from .nps_star_calibration import normalize_ranges
     difficulty_rules={k: {f: v[f] for f in ('rate', 'chord', 'gap', 'peak', 'hold_ms')} for k,v in PRESETS.items()}
     return dict(engine='v32', strategy='independent', steps=50, seed=20261003,
-                fixed_seed=False, ln_ratio=.15, pattern_strength=20, mug_style='ranked', parallel_streams=0,
+                fixed_seed=False, retain_debug_artifacts=False, ln_ratio=.15, pattern_strength=20, mug_style='ranked', parallel_streams=0,
                 dynamic_enabled=True, dynamic_strength=1., section_granularity='balanced',
                 bpm_bucket_count=5, bpm_bucket_range=.2,
                 region_granularity='balanced', region_max_count=24,
@@ -128,6 +128,7 @@ def validate_settings(value):
             raise ValueError(f'{key} 超出范围')
     if d['steps'] not in (20,50,100) or d['mug_style'] not in ('ranked','loved','graveyard'):
         raise ValueError('采样步数或模型风格无效')
+    if type(d['retain_debug_artifacts']) is not bool:raise ValueError('保留调试文件须为布尔值')
     if not isinstance(d['fixed_seed'],bool) or int(d['seed'])!=d['seed'] or int(d['v32_year'])!=d['v32_year']:
         raise ValueError('种子、年份或固定种子设置无效')
     for engine, max_value in [('mug',8),('v32',10)]:

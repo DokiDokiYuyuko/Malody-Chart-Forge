@@ -340,11 +340,11 @@ def prepare_generation(pid,sid,payload):
                 manifest_path = store.directory(pid)/'stems'/stem_id/'manifest.json'
                 if not manifest_path.is_file():raise ValueError('所选分离版本不存在，请先完成分离并选择可用版本')
                 from .separation import validate_manifest
-                manifest = validate_manifest(manifest_path.parent,read(manifest_path))
-                descriptors = [resolve_source(store,pid,row['source_id']) for row in manifest['stems']]
+                manifest = validate_manifest(manifest_path.parent,read(manifest_path),allow_pruned=True)
+                descriptors = [resolve_source(store,pid,row['source_id'],allow_pruned=True) for row in manifest['stems']]
                 if sorted(d['source_role'] for d in descriptors) != ['accompaniment','vocals']:raise ValueError('所选分离版本缺少可用人声或伴奏')
             else:
-                descriptor = resolve_source(store,pid,str(source_id))
+                descriptor = resolve_source(store,pid,str(source_id),allow_pruned=True)
                 if descriptor['source_role'] != 'mix':descriptors = [descriptor]
                 else:original_descriptor = descriptor
             if descriptors and any(row['stem_set_id'] != payload.get('stem_set_id') for row in descriptors):raise ValueError('生成来源与所选分离版本不一致')
@@ -746,12 +746,15 @@ def revision_audio(pid:str,rid:str,request:Request,source_id:str|None=None):
         if source_id.startswith('assembly:'):raise ValueError('片段试玩需使用原曲或对齐声部')
         source=audition_file(source_path(pid,source_id),store.directory(pid))
         key=hashlib.sha256((VERSION+':'+source_id).encode()).hexdigest()[:24]
-        target=store.directory(pid)/'preview'/(rid+'-'+key+'.wav');target.parent.mkdir(exist_ok=True)
+        from .artifact_retention import project_debug, remove_ephemeral
+        suffix='.wav' if project_debug(store.directory(pid)) else '.transient-'+uid()+'.wav'
+        target=store.directory(pid)/'preview'/(rid+'-'+key+suffix);target.parent.mkdir(exist_ok=True)
         with store.lock:
             if not target.exists():
                 y,rate=sf.read(source,start=r['range'][0],stop=r['range'][1],dtype='float32',always_2d=True)
                 if rate!=SR or len(y)!=r['range'][1]-r['range'][0]:raise ValueError('试听声部的采样时钟不匹配')
                 temporary=target.with_name(rid+'.'+uid()+'.wav');sf.write(temporary,y,SR,subtype='FLOAT');temporary.replace(target)
+        remove_ephemeral(source)
         from .server import audio_response
         return audio_response(target,request.headers.get('range'))
     except (ValueError,FileNotFoundError) as exc:raise error(exc)
@@ -777,7 +780,10 @@ def process_rules(pid:str,rid:str,payload:dict=Body(default={})):
 @router.post('/projects/{pid}/assemblies')
 def create_assembly(pid:str,payload:dict=Body(default={})):
     try:
-        return assemble(store,pid,payload.get('preroll',1.5),payload.get('expected_revision'),payload.get('revision_overrides'),payload.get('require_complete',False))
+        result=assemble(store,pid,payload.get('preroll',1.5),payload.get('expected_revision'),payload.get('revision_overrides'),payload.get('require_complete',False))
+        from .artifact_retention import cleanup, project_debug
+        cleanup(store.directory(pid)/'assemblies'/result['id'],debug=project_debug(store.directory(pid)))
+        return result
     except (ValueError,KeyError) as exc:raise error(exc)
 
 @router.get('/projects/{pid}/assemblies/{aid}')

@@ -58,8 +58,17 @@ node_modules/
 
 # Internal development documents; README screenshots are an explicit allowlist
 /AGENTS.md
-/skills/
+/skills/*
+!/skills/malody-4k/
+/skills/malody-4k/*
+!/skills/malody-4k/SKILL.md
+!/skills/malody-4k/references/
+/skills/malody-4k/references/*
+!/skills/malody-4k/references/service-api.md
 /docs/*
+!/docs/codex-workflow.md
+!/docs/storage.md
+!/docs/chart-quality.md
 !/docs/screenshots/
 /docs/screenshots/*
 !/docs/screenshots/readme-v2-*.png
@@ -80,6 +89,17 @@ node_modules/
 /tools/compare_v32_batching.py
 /tools/run_workflow_regression_experiments.py
 /tests/test_mug_vocals*.py
+
+# Personal batch importers and one-off storage maintenance stay local.
+/tools/import_malody_folder.py
+/tools/import_playlist_30_to_malody.py
+/tools/audit_artifact_storage.py
+/tools/clear_approved_installation_cache.ps1
+/tools/delete_approved_storage.ps1
+/tools/exclude_active_storage.py
+/tools/stop_idle_console_service.py
+/一键导入MalodyV谱面.cmd
+/输入目录递归导入MalodyV谱面.cmd
 
 .vscode/
 .idea/

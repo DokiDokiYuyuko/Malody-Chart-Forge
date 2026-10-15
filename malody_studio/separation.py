@@ -168,7 +168,7 @@ def _record_model_inference(model, stems_manifest):
     return True
 
 
-def validate_manifest(directory, manifest, expected=None):
+def validate_manifest(directory, manifest, expected=None, *, allow_pruned=False):
     directory = Path(directory).resolve()
     version = manifest.get('adapter_version')
     settings = manifest.get('settings')
@@ -184,6 +184,12 @@ def validate_manifest(directory, manifest, expected=None):
         raise ValueError('分离缓存缺少人声或伴奏')
     for row in rows:
         path = (directory / row['file']).resolve()
+        if (allow_pruned and manifest.get('storage',{}).get('audio_pruned')
+                and path.parent == directory and not path.exists()):
+            if not row.get('pcm_sha') or not row.get('file_sha256'):
+                raise ValueError('已清理声部缺少可重建的完整性记录')
+            row['path']=str(path)
+            continue
         if path.parent != directory or not path.is_file():
             raise ValueError('分离缓存音频路径无效')
         info = sf.info(path)
@@ -324,7 +330,7 @@ def ensure_stems(source, directory=None, settings=None, progress=lambda *_: None
         lease.rmdir()
 
 
-def resolve_source(store, pid, source_id='mix'):
+def resolve_source(store, pid, source_id='mix', *, allow_pruned=False):
     """Return a validated source descriptor for local spectrum and playback tools."""
     p = store.load(pid)
     if source_id in ('mix', 'original', p.get('source_sha256')):
@@ -341,7 +347,7 @@ def resolve_source(store, pid, source_id='mix'):
         if manifest.get('scope') == 'preview_only' or manifest.get('cache_scope', {}).get('type') == 'separation_trial':
             continue
         if not any(row.get('source_id') == source_id for row in manifest.get('stems', [])):continue
-        cached = validate_manifest(entry.parent, manifest)
+        cached = validate_manifest(entry.parent, manifest, allow_pruned=allow_pruned)
         if cached['frame_count'] != p['samples'] or cached['source_pcm_sha'] != p.get('source_pcm_sha256'):
             raise ValueError('分离版本与项目完整原曲时钟不匹配')
         for row in cached['stems']:
