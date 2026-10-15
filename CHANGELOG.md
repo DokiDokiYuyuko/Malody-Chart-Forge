@@ -2,6 +2,7 @@
 
 ## Codex playlist tasks and production delivery — 2026-10-15
 
+- Add six ready-to-import demo MCZs with both Expert and Master (twelve charts), artwork/audio, portable hashes and measured density, plus a 48-second synchronized chart-data preview video. Distinguish the render from actual gameplay recording.
 - Recommend using Codex with the published `malody-4k` Skill to arrange playlist tasks; keep the web studios focused on manual authoring, listening and candidate review.
 - Publish a reusable Advanced batch submitter with frozen manifests, durable intent/receipts, serial polling and recovery without automatic resubmission of uncertain or failed requests.
 - Add a portable classic-4K delivery importer: explicit package selection, source-hash checks, artwork/artist validation, independent file readback, configurable game directory and preserved import history.

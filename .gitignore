@@ -25,6 +25,13 @@ node_modules/
 !/data/calibrations/nps-star-mapping/
 *.log
 *.mcz
+# Explicitly selected playable demos; all other generated packages stay local.
+!/demos/toy-vwp.mcz
+!/demos/internet-yamero-isekaijoucho.mcz
+!/demos/unknown-mother-goose-isekaijoucho.mcz
+!/demos/ura-omote-lovers.mcz
+!/demos/witch-shin-vwp.mcz
+!/demos/night-of-bloom.mcz
 *.mc
 *.osu
 *.part

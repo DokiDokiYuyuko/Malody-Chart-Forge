@@ -48,7 +48,7 @@
 
 ## 批量案例
 
-本地已有 75 首和新增 45 首，共 120 首成品包。新增批次的 45 首／90 张 Expert、Master 谱面在 2026-10-14 完成了游戏目录回读。该批次最高平均 NPS 为 Expert 11.949、Master 14.949，最小档位差 1.004；7 首在已有模型结果上作了有限规则修正。它说明批量流程已有实际运行记录，不是对任意歌单、音乐准确性或真人手感的保证。个人音频、封面、曲包和任务清单不随仓库发布。
+本地已有 75 首和新增 45 首，共 120 首成品包。新增批次的 45 首／90 张 Expert、Master 谱面在 2026-10-14 完成了游戏目录回读。该批次最高平均 NPS 为 Expert 11.949、Master 14.949，最小档位差 1.004；7 首在已有模型结果上作了有限规则修正。它说明批量流程已有实际运行记录，不是对任意歌单、音乐准确性或真人手感的保证。用户选定的六首／十二张谱作为 [可玩 Demo](../demos/README.md) 公开，其余个人音频、曲包和任务清单保留本地。
 
 ## English
 
@@ -56,4 +56,4 @@ Evaluate the final MCZ, separating structural checks, listening, installed-file 
 
 Use `tools/import_chart_packs.py <final.mcz> --dry-run` to inspect a package. For multiple songs, explicitly list approved, SHA-256-matched deliveries using the manifest above. Specify the actual `--chart-dir` to install. Reimports compare real file bytes and preserve replaced folders in `outputs/import-history/`. NPS uses the playable-head-to-last-head/hold-tail span, with a one-second minimum. The tool does not enforce a user's density targets or prove musical quality.
 
-The local production case contains 120 song packages. The latest 45-song/90-chart batch has installed-file readback records; it is not a human-playtest claim. Personal media and task records are excluded from the repository.
+The local production case contains 120 song packages. The latest 45-song/90-chart batch has installed-file readback records; it is not a human-playtest claim. Six explicitly selected packages are published as [playable demos](../demos/README.md); other personal media and task records stay local.

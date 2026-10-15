@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/inference-local-52c9a5?style=for-the-badge" alt="Local inference">
     <img src="https://img.shields.io/badge/platform-Windows%20desktop-5679d8?style=for-the-badge" alt="Windows desktop">
   </p>
-  <p><a href="#简体中文">简体中文</a> · <a href="#english">English</a> · <a href="#快速开始">快速开始</a> · <a href="docs/codex-workflow.md">Codex 歌单任务</a> · <a href="CHANGELOG.md">Release notes</a> · <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1">v1 archive</a></p>
+  <p><a href="#简体中文">简体中文</a> · <a href="#english">English</a> · <a href="#快速开始">快速开始</a> · <a href="demos/README.md">可玩 Demo + 视频</a> · <a href="docs/codex-workflow.md">Codex 歌单任务</a> · <a href="CHANGELOG.md">Release notes</a> · <a href="https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1">v1 archive</a></p>
 </div>
 
 ![新版高级制谱台：区域、波形与四轨预览](docs/screenshots/readme-v2-advanced.png)
@@ -29,7 +29,24 @@ Startrail 是面向 **Windows 电脑端、经典 Malody 4K** 的本地制谱工�
 
 **多首或歌单制谱，更推荐让 Codex 使用本仓库的 Skill 安排自动任务。** 把网易云歌单、喜欢的音乐人、曲目数量和难度偏好交给 Codex，由它选曲、核验音源、通过现有本地服务提交任务并检查交付，省去逐首在前端设置和提交。网页适合试听试玩、编辑区域和比较候选；单曲也可继续手动生成。
 
-`main` 包含当前工作流；`v1` 保留此前 GitHub 版本。新主分支公开运行代码、必要模型配置、测试和使用说明。音乐、生成曲包、密钥、Cookie、实验数据和内部开发报告留在本机。
+`main` 包含当前工作流；`v1` 保留此前 GitHub 版本。新主分支公开运行代码、必要模型配置、测试、使用说明和下方明确选定的 Demo。其余个人音乐、曲包、密钥、Cookie、实验数据和内部开发报告留在本机。
+
+### 先玩一下：六首 Demo，Expert / Master 都有
+
+这些是已经导入 Malody V 的成品包，每包包含音频、封面和两档谱面，**不需要安装制谱模型即可导入游玩**。
+
+| 曲目 | Expert / Master 平均 NPS | 下载 |
+| --- | --- | --- |
+| 玩具 · V.W.P | 11.11 / 13.66 | [MCZ](demos/toy-vwp.mcz) |
+| INTERNET YAMERO · ヰ世界情緒翻唱 | 12.13 / 14.24 | [MCZ](demos/internet-yamero-isekaijoucho.mcz) |
+| 鹅妈妈／アンノウン・マザーグース · ヰ世界情緒翻唱 | 9.78 / 13.57 | [MCZ](demos/unknown-mother-goose-isekaijoucho.mcz) |
+| 里表情人／裏表ラバーズ · wowaka / 初音ミク | 11.49 / 14.95 | [MCZ](demos/ura-omote-lovers.mcz) |
+| 魔女(真) sinka ver. · V.W.P | 10.42 / 12.13 | [MCZ](demos/witch-shin-vwp.mcz) |
+| Night of Bloom (feat. nayuta) · Kirara Magic / Xomu / nayuta | 11.07 / 13.47 | [MCZ](demos/night-of-bloom.mcz) |
+
+[![点击观看六首曲包的 Expert / Master 预览](demos/preview.jpg)](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/preview.mp4)
+
+**[播放／下载 48 秒双难度预览视频](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/preview.mp4)**：60 FPS、×10 流速，含原曲片段，按真实谱面数据同步渲染，非 Malody V 实机录屏。曲包下载、导入、哈希和指标说明见 [Demo 文件夹](demos/README.md)。
 
 ### 推荐：让 Codex 根据歌单安排任务
 
@@ -215,7 +232,13 @@ node --test tests/*.cjs tests/*.js
 
 **For multiple songs or playlists, we recommend asking Codex to use the repository's Skill to arrange automatic tasks.** Give it playlist links, artist preferences, song count and difficulty goals. Codex can verify recordings, prepare sources, submit the existing local queue and check deliveries. The web studios support listening, practice, region editing and A/B review, as well as manual single-song generation.
 
-`main` contains the current workflow. [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1) preserves the previous GitHub version. The public tree contains application code, required configuration, tests and user documentation. Personal music, generated packages, credentials, research outputs and internal development reports stay local.
+`main` contains the current workflow. [`v1`](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/tree/v1) preserves the previous GitHub version. The public tree contains application code, required configuration, tests, user documentation and the explicitly selected demos. Other personal music, packages, credentials, research outputs and internal development reports stay local.
+
+### Play the demos first
+
+The [demo folder](demos/README.md) contains **six ready-to-import MCZs / twelve charts**, each with full audio, cover art and both Expert and Master. The selection includes Toy, Isekaijoucho's INTERNET YAMERO and Unknown Mother-Goose covers, Ura-Omote Lovers, Witch (Shin) sinka ver. and Night of Bloom (feat. nayuta). No model installation is needed to play these packages.
+
+Watch the [48-second audio preview](https://github.com/DokiDokiYuyuko/Malody-Chart-Forge/raw/refs/heads/main/demos/preview.mp4) at 60 FPS and ×10 scroll speed, showing actual Expert/Master chart data side by side. It is a chart-data render, not an in-game recording. Import instructions, hashes and measured NPS are in the [demo guide](demos/README.md).
 
 ### Recommended: playlist tasks with Codex
 

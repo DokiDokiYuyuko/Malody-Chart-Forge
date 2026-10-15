@@ -1,0 +1,283 @@
+{
+  "schema": 1,
+  "song_count": 6,
+  "chart_count": 12,
+  "format": "classic Malody 4K MCZ, Expert + Master",
+  "creator": "Startrail",
+  "evidence": "Source packages match installed game files byte-for-byte; not a human-playtest claim.",
+  "preview": {
+    "file": "preview.mp4",
+    "kind": "chart-data render; not an in-game recording",
+    "fps": 60,
+    "scroll_multiplier": 10,
+    "width": 1280,
+    "height": 720,
+    "duration_seconds": 48
+  },
+  "songs": [
+    {
+      "song_id": "2061888111",
+      "title": "玩具",
+      "display_title": "玩具",
+      "artist": "V.W.P",
+      "file": "toy-vwp.mcz",
+      "sha256": "249d195e3b686ecd8fb94fdedfccabfb31c79cb8ecc6195bf94de75c0d89aa60",
+      "audio_sha256": "2832aa2a309ab080705e8b77e595d14decab7cbc5619738b3b02511539792fd6",
+      "size_bytes": 5664859,
+      "duration_seconds": 206.40702947845804,
+      "difficulties": {
+        "expert": {
+          "heads": 2208,
+          "holds": 222,
+          "average_nps": 11.109210380671584,
+          "active_span_seconds": 198.754,
+          "peak_1s_heads": 22,
+          "lanes": [
+            559,
+            542,
+            542,
+            565
+          ]
+        },
+        "master": {
+          "heads": 2714,
+          "holds": 291,
+          "average_nps": 13.655758161252667,
+          "active_span_seconds": 198.744,
+          "peak_1s_heads": 27,
+          "lanes": [
+            630,
+            721,
+            720,
+            643
+          ]
+        }
+      },
+      "installed_files_match": true,
+      "gameplay_recording": false,
+      "human_playtest": "not_established",
+      "preview_source_start_seconds": 133,
+      "preview_duration_seconds": 8
+    },
+    {
+      "song_id": "2095790650",
+      "title": "INTERNET YAMERO (cover)",
+      "display_title": "INTERNET YAMERO",
+      "artist": "ヰ世界情緒",
+      "file": "internet-yamero-isekaijoucho.mcz",
+      "sha256": "e9a60263aa5fdfe4292bf4a81bbd3596e173c2c12899dd40e46f5084245c74db",
+      "audio_sha256": "57f391318a20f53fdee8e5b41b5955772d1d71e79571a8b55a50c4bc26fb46d5",
+      "size_bytes": 9890890,
+      "duration_seconds": 244.37934240362813,
+      "difficulties": {
+        "expert": {
+          "heads": 2804,
+          "holds": 266,
+          "average_nps": 12.12603464828445,
+          "active_span_seconds": 231.238,
+          "peak_1s_heads": 26,
+          "lanes": [
+            690,
+            703,
+            707,
+            704
+          ]
+        },
+        "master": {
+          "heads": 3445,
+          "holds": 295,
+          "average_nps": 14.239185245806778,
+          "active_span_seconds": 241.938,
+          "peak_1s_heads": 31,
+          "lanes": [
+            854,
+            895,
+            880,
+            816
+          ]
+        }
+      },
+      "installed_files_match": true,
+      "gameplay_recording": false,
+      "human_playtest": "not_established",
+      "preview_source_start_seconds": 169,
+      "preview_duration_seconds": 8
+    },
+    {
+      "song_id": "2060100176",
+      "title": "アンノウン・マザーグース - covered by ヰ世界情緒",
+      "display_title": "鹅妈妈 / Unknown Mother-Goose",
+      "artist": "ヰ世界情緒",
+      "file": "unknown-mother-goose-isekaijoucho.mcz",
+      "sha256": "81bc301619c8efcf04fbcacd2f3729b4ecad5636293820cd8036dae991d33167",
+      "audio_sha256": "3fa79826d6733bfe9298db005ac1accbdaa556177fbb60dd78dad1cbdc3328c1",
+      "size_bytes": 9966928,
+      "duration_seconds": 288.51027210884354,
+      "difficulties": {
+        "expert": {
+          "heads": 2647,
+          "holds": 371,
+          "average_nps": 9.77701607094708,
+          "active_span_seconds": 270.737,
+          "peak_1s_heads": 23,
+          "lanes": [
+            689,
+            661,
+            654,
+            643
+          ]
+        },
+        "master": {
+          "heads": 3654,
+          "holds": 396,
+          "average_nps": 13.571534690239192,
+          "active_span_seconds": 269.24,
+          "peak_1s_heads": 28,
+          "lanes": [
+            870,
+            1015,
+            947,
+            822
+          ]
+        }
+      },
+      "installed_files_match": true,
+      "gameplay_recording": false,
+      "human_playtest": "not_established",
+      "preview_source_start_seconds": 176,
+      "preview_duration_seconds": 8
+    },
+    {
+      "song_id": "22677436",
+      "title": "裏表ラバーズ",
+      "display_title": "里表情人 / 裏表ラバーズ",
+      "artist": "wowaka / 初音ミク",
+      "file": "ura-omote-lovers.mcz",
+      "sha256": "b3de3d6cf549a7391eed8f7308c6e1ae8ff161aad991c3af58a89142b60e3ada",
+      "audio_sha256": "ba22d014882d2a911a36986c0fb5b08e2ac0dfe019ff187ad3d9f720f425f5a9",
+      "size_bytes": 7969044,
+      "duration_seconds": 187.37573696145125,
+      "difficulties": {
+        "expert": {
+          "heads": 2085,
+          "holds": 116,
+          "average_nps": 11.486907129595451,
+          "active_span_seconds": 181.511,
+          "peak_1s_heads": 20,
+          "lanes": [
+            484,
+            550,
+            557,
+            494
+          ]
+        },
+        "master": {
+          "heads": 2713,
+          "holds": 224,
+          "average_nps": 14.945929121148518,
+          "active_span_seconds": 181.521,
+          "peak_1s_heads": 29,
+          "lanes": [
+            678,
+            677,
+            678,
+            680
+          ]
+        }
+      },
+      "installed_files_match": true,
+      "gameplay_recording": false,
+      "human_playtest": "not_established",
+      "preview_source_start_seconds": 86,
+      "preview_duration_seconds": 8
+    },
+    {
+      "song_id": "2749390432",
+      "title": "魔女(真) sinka ver.",
+      "display_title": "魔女(真) sinka ver.",
+      "artist": "V.W.P",
+      "file": "witch-shin-vwp.mcz",
+      "sha256": "89bbd1ee4c9fe753e890339ca06bf7e3c5bf506f9999f1c8b466ecef1de7cc6e",
+      "audio_sha256": "b0cd4cb7ae25ca28ea3b82fcab99e11ba575e3a34bd6dd1b7ed0a3b8d2345c48",
+      "size_bytes": 6962026,
+      "duration_seconds": 266.7995918367347,
+      "difficulties": {
+        "expert": {
+          "heads": 2641,
+          "holds": 320,
+          "average_nps": 10.418803553675973,
+          "active_span_seconds": 253.48399999999998,
+          "peak_1s_heads": 19,
+          "lanes": [
+            671,
+            665,
+            662,
+            643
+          ]
+        },
+        "master": {
+          "heads": 3088,
+          "holds": 375,
+          "average_nps": 12.134024385931133,
+          "active_span_seconds": 254.491,
+          "peak_1s_heads": 25,
+          "lanes": [
+            779,
+            801,
+            804,
+            704
+          ]
+        }
+      },
+      "installed_files_match": true,
+      "gameplay_recording": false,
+      "human_playtest": "not_established",
+      "preview_source_start_seconds": 130,
+      "preview_duration_seconds": 8
+    },
+    {
+      "song_id": "1963634342",
+      "title": "Night of Bloom (feat. nayuta)",
+      "display_title": "Night of Bloom",
+      "artist": "Kirara Magic / Xomu / nayuta",
+      "file": "night-of-bloom.mcz",
+      "sha256": "1e2bce5bc4ad2ab1581441060af153353779268d2e6ffa87c96f5fc1f1e71ba4",
+      "audio_sha256": "73a34140d7a27278bd0351ac317fd3131004e6f61455ca35b561818eadc5a0a4",
+      "size_bytes": 13794012,
+      "duration_seconds": 287.5698412698413,
+      "difficulties": {
+        "expert": {
+          "heads": 3087,
+          "holds": 460,
+          "average_nps": 11.074161366351339,
+          "active_span_seconds": 278.757,
+          "peak_1s_heads": 26,
+          "lanes": [
+            748,
+            759,
+            786,
+            794
+          ]
+        },
+        "master": {
+          "heads": 3754,
+          "holds": 532,
+          "average_nps": 13.465960247796627,
+          "active_span_seconds": 278.777,
+          "peak_1s_heads": 29,
+          "lanes": [
+            940,
+            983,
+            966,
+            865
+          ]
+        }
+      },
+      "installed_files_match": true,
+      "gameplay_recording": false,
+      "human_playtest": "not_established",
+      "preview_source_start_seconds": 107,
+      "preview_duration_seconds": 8
+    }
+  ]
+}
